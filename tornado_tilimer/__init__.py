@@ -1,5 +1,35 @@
 import tornado.web
 
+
+def get_arg_by_list(needed = None, optional = None):
+    
+    """目的为获取参数的装饰器
+    
+    :param list needed: 必须参数.
+    :param list optional: 可选参数.
+    """
+    
+    def _deco(func):
+        def __deco(self, *args, **kwargs):
+            arguments = {}
+            if needed:
+                for line in needed:
+                    arguments[line] = self.get_argument(line, None)
+                    if not arguments[line] or len(arguments[line]) == 0:
+                        raise tornado.web.HTTPError(400)
+                        self.finish()
+            if optional:
+                for line in optional:
+                    arguments[line] = self.get_argument(line, None)
+                    if arguments[line] and len(arguments[line]) == 0:
+                        arguments[line] = None
+            
+            kwargs.update(arguments)
+            return func(self, *args, **kwargs)
+        return __deco
+    return _deco
+
+
 def base_handler(db, template_namespace):
     
     """通过这个函数获得 BaseHandler.
@@ -25,10 +55,19 @@ def base_handler(db, template_namespace):
 
         @property
         def class_name(self):
+        
+            """获取 Class Name, 方便根据 Class Name 进行辨别.
+            """
+            
             return self.__class__.__name__
         
         
-        def initialize(self):
+        def __init__(self, *args, **kwargs):
+            
+            """替代原 __init__ 函数.
+            """
+            
+            super().__init__(*args, **kwargs)
             self.ui.update(self._template_namespace)
             self.ui['class_name'] = self.class_name
 
@@ -81,8 +120,24 @@ def base_handler(db, template_namespace):
             self.fresh_current_user()
 
 
+        def get_session_id(self):
+        
+            """获取 session_id.
+            """
+        
+            session_id = self.get_argument('token', None)
+            if not session_id:
+                session_id = self.get_secure_cookie("token")
+            return session_id
+
+
         def get_session(self):
-            session_id = self.get_secure_cookie("session_id")
+            
+            """获取 session.
+            """
+            
+            session_id = self.get_session_id()
+            
             if not session_id:
                 self.session_id = self.new_session()
             else:
@@ -198,3 +253,5 @@ def base_handler(db, template_namespace):
                 return
             
             return self.render_data['custom_css'].append( "css/" + name + '.min.css' )
+    
+    return BaseHandler
