@@ -49,6 +49,10 @@ def generate_base_data_class( setting, collection_name, db ):
             return self.__class__.__name__
 
         def build(self, data):
+            
+            """由给定的数据，建立结构体
+            """
+            
             self._data = data
             self._ref_data = {}
         
@@ -64,6 +68,10 @@ def generate_base_data_class( setting, collection_name, db ):
             )
 
         def get_dict(self):
+            
+            """获取结构体中的数据
+            """
+            
             return self._data
 
         def get(self, key):
