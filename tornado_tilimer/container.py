@@ -1,5 +1,7 @@
 from autoclave import db
 from autoclave.config import *
+import uuid
+import ObjectId from bson.objectid
 
 def generate_caches_clear_func( name ):
     def clear(caches):
@@ -16,7 +18,7 @@ def generate_base_data_class( setting, collection_name, db ):
 
     """参数为class的设置
     
-    :param dict setting: 附加到 template 的 namespace 中的属性.
+    :param dict setting:
     项内容为字符串 'Ref'，按照DBRef处理。
     项内容为字符串 'MultiRef'，按照DBRef的List处理。
     项内容为字符串 'Direct'，按照正常内容处理。
@@ -56,17 +58,62 @@ def generate_base_data_class( setting, collection_name, db ):
             self._data = data
             self._ref_data = {}
         
+        @classmethod
+        def get_by_filter(cls, filter):
+        
+            """通过filter来获取数据
+            """
+            
+            new_obj = cls()
+            new_obj.build(db[cls._collection_name].find_one(
+                filter
+            ))
+            return new_obj
+        
+        @classmethod
+        def get(cls):
+        
+            """通过_id来获取数据
+            """
+            
+            return cls.get_by_filter({"_id": id})
+        
+        @classmethod
+        def new(cls):
+            _id = str(uuid.uuid4().hex)
+            new_obj = cls({"_id": _id})
+            new_obj.create()
+            new_obj.save()
+            return new_obj
+        
+        def create(self):
+        
+            """被new方法引用，自定义创建过程中的操作。
+            """
+            
+            pass
+            
+        
         def save(self):
             
             """保存当前结构体
             """
             
-            db[_collection_name].replace_one(
+            db[self._collection_name].replace_one(
                 filter = {'_id': self._data['_id']},
                 replacement = self._data,
                 upsert = True,
             )
-
+        
+        def destroy(self):
+            
+            """摧毁当前对象所代表的数据库结构
+            """
+            
+            db[self._collection_name].delete_many(
+                filter = {'_id': self._data['_id']},
+            )
+        
         def get_dict(self):
             
             """获取结构体中的数据
@@ -74,20 +121,29 @@ def generate_base_data_class( setting, collection_name, db ):
             
             return self._data
 
-        def get(self, key):
+        def get_raw(self, key):
+        
+            """使用key获取数据初始值
+            """
+            
             return self._data[key] if key in self._data else None
         
         def __getitem__(self, key):
-            return self.get(key)
+            
+            """"通过数组形式获取的值为初始值
+            """"
+            
+            return self.get_raw(key)
         
-        def __getattribute__(self, key):
-            if key == "_data":
-                return object.__getattribute__(self, "_data")
+        def __getattr__(self, key):
+            
+            """通过属性形式获取值使用解析过的版本
+            """
             
             if key in self._direct_list:
                 return self._data[key] if key in self._data else None
             
-            if key in self._ref_dict:
+            elif key in self._ref_dict:
                 if key in self._ref_data:
                     return self._ref_data[key]
                 if key in self._data and self._data[key]:
@@ -95,19 +151,47 @@ def generate_base_data_class( setting, collection_name, db ):
                     return self._ref_data[key]
                 return None
             
-            if key in self._multiref_dict:
+            elif key in self._multiref_dict:
                 if key in self._ref_data:
                     return self._ref_data[key]
                 if key in self._data and self._data[key]:
                     self._ref_data[key] = _multirefs(self._data[key], self.multiref_dict[key], self, key)
                     return self._ref_data[key]
                 return None
+            return None
             
-            v = object.__getattribute__(self, key)
-            if hasattr(v, '__get__'):
-               return v.__get__(self)
-            return v
-
+        def __setattr__(self, key, value):
+            
+            """通过属性来设置值
+            """
+            
+            if key in self._direct_list:
+                self._data[key] = value
+            elif key in self._ref_dict:
+                if not (isinstance(value, string) or isinstance(value, int) or isinstance(value, ObjectId)):
+                    value = value._id
+                self._data[key] = value
+                if key in self._ref_data:
+                    del self._ref_data[key]
+            elif key in self._multiref_dict:
+                if isinstance(value, _multirefs):
+                    value = value._data
+                self._data[key] = value
+                if key in self._ref_data:
+                    del self._ref_data[key]
+            else:
+                raise NameError("Key is not in the list!")
+        
+        def __delattr__(self, key):
+            
+            """通过属性来删除值
+            """
+            
+            if key in self._data:
+                del self._data[key]
+                if key in self._ref_data:
+                    del self._ref_data[key]
+    
     return base_data
 
 class _multirefs(object):
@@ -138,12 +222,17 @@ class _multirefs(object):
         index = self._index
         self._index = self._index + 1
         return self[index]
-
+    
+    def __setitem__(self, key, value):
+        self._data[key] = value
+        if key in self._ref_list:
+            del self._ref_list[key]
+    
     def __getitem__(self, key):
         if key not in self._ref_list:
             self._ref_list[key] = (self._handler)(self._data[key])
         return self._ref_list[key]
-    
+
     def __delitem__(self, key):
         del self._data[key]
         if key < self._index:

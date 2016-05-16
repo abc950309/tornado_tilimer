@@ -1,5 +1,7 @@
 import tornado.web
+import tornado_tilimer.struct as struct
 
+_db = None
 
 def get_arg_by_list(needed = None, optional = None):
     
@@ -31,6 +33,8 @@ def get_arg_by_list(needed = None, optional = None):
 
 
 def base_handler(db, template_namespace, api_handlers = None, authless_handlers = None):
+    global _db
+    _db = db
     
     """通过这个函数获得 BaseHandler.
     
@@ -47,6 +51,8 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
         global caches
         _db = db
         _template_namespace = template_namespace
+        _api_handlers = api_handlers
+        _authless_handlers = authless_handlers
         
         error_write = lambda self, error_name: (
             self._error_write(error_name) or self.finish()
@@ -73,20 +79,11 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
 
 
         def new_session(self):
+        
             """获取新的 session。
             """
-            session_id = str(uuid.uuid4().hex)
-            creation = int(time.time())
-            _db.sessions.insert(
-                {
-                    "_id": session_id,
-                    "uid": 0,
-                    "creation": creation,
-                    "expired": creation + EXPIRED_TIME,
-                }
-            )
-            #self.set_secure_cookie("session_id", session_id, expires = creation + EXPIRED_TIME)
-            return session_id
+            
+            self.session = struct.DataSession.new()
 
 
         def fresh_current_user(self, uid = None):
