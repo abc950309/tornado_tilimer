@@ -41,7 +41,22 @@ def generate_base_data_class( setting, collection_name, db ):
         _ref_dict = ref_dict
         _multiref_dict = multiref_dict
         _collection_name = collection_name
-
+        
+        def __init__(self, *args, **kwargs):
+            
+            """对象初始化
+            """
+            
+            self._change_lock = False
+            self.initialize(*args, **kwargs)
+        
+        def initialize(self, *args, **kwargs):
+            
+            """为初始化自定义而设计的钩子
+            """
+            
+            pass
+        
         @property
         def class_name(self):
         
@@ -99,16 +114,22 @@ def generate_base_data_class( setting, collection_name, db ):
             """保存当前结构体
             """
             
-            db[self._collection_name].replace_one(
-                filter = {'_id': self._data['_id']},
-                replacement = self._data,
-                upsert = True,
-            )
+            if self._change_lock:
+                db[self._collection_name].replace_one(
+                    filter = {'_id': self._data['_id']},
+                    replacement = self._data,
+                    upsert = True,
+                )
+                self._change_lock = False
         
         def destroy(self):
             
             """摧毁当前对象所代表的数据库结构
             """
+            
+            self._change_lock = False
+            self._data = {}
+            self._ref_data = {}
             
             db[self._collection_name].delete_many(
                 filter = {'_id': self._data['_id']},
@@ -165,6 +186,8 @@ def generate_base_data_class( setting, collection_name, db ):
             """通过属性来设置值
             """
             
+            self._change_lock = True
+            
             if key in self._direct_list:
                 self._data[key] = value
             elif key in self._ref_dict:
@@ -180,6 +203,7 @@ def generate_base_data_class( setting, collection_name, db ):
                 if key in self._ref_data:
                     del self._ref_data[key]
             else:
+                self._change_lock = False
                 raise NameError("Key is not in the list!")
         
         def __delattr__(self, key):
@@ -189,6 +213,7 @@ def generate_base_data_class( setting, collection_name, db ):
             
             if key in self._data:
                 del self._data[key]
+                self._change_lock = True
                 if key in self._ref_data:
                     del self._ref_data[key]
     

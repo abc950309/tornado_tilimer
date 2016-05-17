@@ -42,7 +42,7 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
     :param dict template_namespace: 附加到 template 的 namespace 中的属性.
     """
     
-    class BaseHandler(tornado.web.RequestHandler):
+    class _base_handler(tornado.web.RequestHandler):
         
         """Base Handler，提供基本服务。
         添加了Session和验证处理。
@@ -84,7 +84,8 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
             """
             
             self.session = struct.DataSession.new()
-
+            self.session_id = self.session._id
+            
 
         def fresh_current_user(self, uid = None):
             if uid and uid != 0:
@@ -256,4 +257,4 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
             
             return self.render_data['custom_css'].append( "css/" + name + '.min.css' )
     
-    return BaseHandler
+    return _base_handler
