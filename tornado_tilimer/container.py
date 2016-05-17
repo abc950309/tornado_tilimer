@@ -48,6 +48,7 @@ def generate_base_data_class( setting, collection_name, db ):
             """
             
             self._change_lock = False
+            self._destroyed = False
             self.initialize(*args, **kwargs)
         
         def initialize(self, *args, **kwargs):
@@ -114,7 +115,7 @@ def generate_base_data_class( setting, collection_name, db ):
             """保存当前结构体
             """
             
-            if self._change_lock:
+            if self._change_lock and not self._destroyed:
                 db[self._collection_name].replace_one(
                     filter = {'_id': self._data['_id']},
                     replacement = self._data,
@@ -127,7 +128,7 @@ def generate_base_data_class( setting, collection_name, db ):
             """摧毁当前对象所代表的数据库结构
             """
             
-            self._change_lock = False
+            self._destroyed = False
             self._data = {}
             self._ref_data = {}
             

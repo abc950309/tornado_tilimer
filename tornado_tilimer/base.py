@@ -32,7 +32,7 @@ def get_arg_by_list(needed = None, optional = None):
     return _deco
 
 
-def base_handler(db, template_namespace, api_handlers = None, authless_handlers = None):
+def base_handler(db, **kwargs):
     global _db
     _db = db
     
@@ -40,6 +40,11 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
     
     :param pymongo.collection.Collection db: APP 使用的 MongoDB Collection.
     :param dict template_namespace: 附加到 template 的 namespace 中的属性.
+    :param dict api_handlers: 附加到 template 的 namespace 中的属性.
+    :param dict authless_handlers: 附加到 template 的 namespace 中的属性.
+    :param dict public_js: 附加到 template 的 namespace 中的属性.
+    :param dict public_css: 附加到 template 的 namespace 中的属性.
+    :param dict current_user_handler: 附加到 template 的 namespace 中的属性.
     """
     
     class _base_handler(tornado.web.RequestHandler):
@@ -50,9 +55,6 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
         
         global caches
         _db = db
-        _template_namespace = template_namespace
-        _api_handlers = api_handlers
-        _authless_handlers = authless_handlers
         
         error_write = lambda self, error_name: (
             self._error_write(error_name) or self.finish()
@@ -67,6 +69,15 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
             
             return self.__class__.__name__
         
+        @property
+        def api_flag(self):
+            
+            """确认是否为api
+            """
+            
+            if not hasattr(self, '_api_flag'):
+                self._api_flag = (True if hasattr(self, '_api_handlers') and self.class_name in self._api_handlers else False)
+            return self._api_flag
         
         def __init__(self, *args, **kwargs):
             
@@ -74,7 +85,10 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
             """
             
             super().__init__(*args, **kwargs)
-            self.ui.update(self._template_namespace)
+            
+            if hasattr(self, '_template_namespace'):
+                self.ui.update(self._template_namespace)
+            
             self.ui['class_name'] = self.class_name
 
 
@@ -85,147 +99,204 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
             
             self.session = struct.DataSession.new()
             self.session_id = self.session._id
-            
-
-        def fresh_current_user(self, uid = None):
-            if uid and uid != 0:
-                models.User.get4id(uid, fresh = True)
-            else:
-                self._current_user = self.get_current_user(fresh = True)
-
-
-        def fresh_session(self):
-            session = _db.sessions.find_one({"_id": self.session_id})
-            
-            if not session:
-                self.session_id = self.new_session()
-                self.fresh_session()
-            else:
-                self.session = caches['sessions'][self.session_id] = models.Session(session)
-
-
-        def change_session(self, list):
-            _db.sessions.update_one(
-                {"_id": self.session_id},
-                {
-                    "$set": list,
-                    "$currentDate": {"lastModified": True}
-                }
-            )
-            self.fresh_session()
-
-
-        def fresh_all(self):
-            self.fresh_session()
-            self.fresh_current_user()
 
 
         def get_session_id(self):
         
             """获取 session_id.
             """
-        
-            session_id = self.get_argument('token', None)
-            if not session_id:
-                session_id = self.get_secure_cookie("token")
-            return session_id
+            if self.api_flag:
+                return self.get_argument('token', None)
+            else:
+                if self.settings.get('cookie_secret'):
+                    raw_session_id = self.get_secure_cookie("token")
+                    return (raw_session_id.decode() if raw_session_id else None)
+                else:
+                    return self.get_cookie("token")
 
 
-        def get_session(self):
+        def initialize_session(self):
             
-            """获取 session.
+            """初始化 session.
             """
             
-            session_id = self.get_session_id()
+            self.session_id = self.get_session_id()
             
-            if not session_id:
-                if api_handlers and self.class_name in api_handlers:
+            if not self.session_id:
+                if self.api_flag:
                     raise tornado.web.HTTPError(400)
-                self.session_id = self.new_session()
-                set_session()
+                    return
+                self.new_session()
+                self.set_session()
             else:
-                self.session_id = session_id.decode()
+                self.session = struct.DataSession.get(self.session_id)
             
-            if self.session_id in caches['sessions']:
-                #print("Get From Cache sessions")
-                self.session = caches['sessions'][self.session_id]
+            self.add_wait_to_save_data(self.session)
+
+        def set_session(self):
+            
+            """在Cookie中设置session id
+            """
+            
+            if self.api_flag:
+                raise tornado.web.HTTPError(400)
+            
+            if self.settings.get('cookie_secret'):
+                return self.set_secure_cookie("token", self.session_id)
             else:
-                #print("Not Get From Cache sessions")
-                self.fresh_session()
+                return self.set_cookie("token", self.session_id)
+
+        @property
+        def ajax_flag(self):
+            
+            """检测是否为Ajax请求，需在Ajax请求中添加ajax_flag标签
+            """
+            
+            if not hasattr(self, '_ajax_flag'):
+                try:
+                    self.get_argument('ajax_flag')
+                except:
+                    self._ajax_flag = None
+                else:
+                    self._ajax_flag = True
+            
+            return self._ajax_flag
 
 
-        def mobile_checker(self):
-            if self.request.headers['User-Agent'].find("Mobile") != -1 :
-                self.mobile_flag = True
-            else:
-                self.mobile_flag = False
-
-
-        def ajax_checker(self):
-            try:
-                self.ajax_flag = self.get_argument('ajax_flag')
-            except:
-                self.ajax_flag = None
+        @property
+        def mobile_flag(self):
+            
+            """检测是否为Ajax请求，需在Ajax请求中添加ajax_flag标签
+            """
+            
+            if not hasattr(self, '_mobile_flag'):
+                if self.request.headers['User-Agent'].find("Mobile") != -1 :
+                    self._mobile_flag = True
+                else:
+                    self._mobile_flag = False
+            
+            return self._mobile_flag
 
 
         def prepare(self):
-        
+            
+            """准备进入页面正式的处理，提供了session初始化接口、公共js&css接口、render数据人性化和根据列表提供验证等的服务基础。
+            """
+            
             self.session_id = None
             self.session = None
-            self.render_data = {}
+            self._render_data = {}
             
-            self.add_css("mine")
-            self.add_js("mine")
+            if self.ajax_flag or self.api_flag:
+            self.add_public_js()
+            self.add_public_css()
             
-            self.get_session()
-            self.ajax_checker()
-            self.mobile_checker()
+            self.initialize_session()
             
             self.prepare_c()
             
-            if self.get_login_url() not in self.request.uri:
+            if not (hasattr(self, '_authless_handlers') and self.class_name in self._authless_handlers):
                 self.authenticate()
 
+        
+        def add_wait_to_save_data(self, data):
+            
+            """为自动数据保存做准备
+            """
+            
+            if not hasattr(self, '_wait_to_save_data'):
+                self._wait_to_save_data = []
+            
+            self._wait_to_save_data.append(data)
+            
+        
+        def add_public_js(self):
+            
+            """为生成器准备的添加公共js脚本的钩子
+            假如您并未使用该特性，请按照您的意愿使用
+            """
+            
+            pass
+        
+        def add_public_css(self):
+            
+            """为生成器准备的添加公共css脚本的钩子
+            假如您并未使用该特性，请按照您的意愿使用
+            """
+            
+            pass
+        
+        def prepare_c(self):
+            
+            """为自定义的prepare程序段留下的钩子
+            """
+            
+            pass
 
+        
+        def initialize_render_data(self):
+            
+            """初始化 render data
+            """
+            
+            if not hasattr(self, '_render_data'):
+                self._render_data = {}
+        
+        
         def add_render(self, name, val):
-            self.render_data[name] = val
+            
+            """在render预备字典中添加数据，在渲染时不必添加极多的各类数据。
+            
+            :param name: 在模板中可用的调用名.
+            :param val: 调用名对应的值.
+            """
+            
+            self.initialize_render_data()
+            self._render_data[name] = val
 
 
         def put_render(self, template_name, **kwargs):
-            self.render_data.update(kwargs)
-            self.render_data['__keys__'] = self.render_data.keys()
-            self.render(template_name, **(self.render_data))
-
-
-        def get_current_user(self, fresh = False):
-            return models.User.get4id(self.session.uid, fresh)
+            
+            """根据之前添加的数据渲染模板。
+            
+            :param template_name: 模板名.
+            """
+            
+            if not hasattr(self, '_render_data'):
+                self.render(template_name, **kwargs)
+            else:
+                self._render_data.update(kwargs)
+                self._render_data['__keys__'] = self._render_data.keys()
+                self.render(template_name, **(self._render_data))
 
 
         @tornado.web.authenticated
         def authenticate(self):
-            pass
-
-
-        def prepare_c(self):
+            
+            """调用进行登录验证装饰器的虚方法
+            """
+            
             pass
 
 
         def on_finish_c(self):
+            
+            """由用户自定义的结束方法钩子
+            """
+            
             pass
 
 
         def on_finish(self):
+            
+            """提供数据自动保存服务等
+            """
+            
             self.on_finish_c()
             
-            if hasattr(self, '_current_user') and getattr(self, '_current_user'):
-                self.current_user.access_time = time.time()
-            if hasattr(self, 'session') and getattr(self, 'session'):
-                self.session.access_time = time.time()
-            caches['counter'] += 1
-            
-            if caches['counter'] >= CACHES_COUNTER_LIMIT:
-                clear_users_caches(caches)
-                clear_sessions_caches(caches)
+            if hasattr(self, '_wait_to_save_data'):
+                for line in self._wait_to_save_data:
+                    line.save()
 
 
         def _error_write(self, error_name):
@@ -238,23 +309,63 @@ def base_handler(db, template_namespace, api_handlers = None, authless_handlers 
                 return self.redirect("/" + self.class_name.replace("Handler", "") + "?show_type=danger&show_text=" + ERROR_CODES[error_name]['dscp'])
         
         def add_js(self, name):
-            if 'custom_js' not in self.render_data:
-                self.render_data['custom_js'] = []
+            
+            """在页面中添加js文件，添加在页面尾部。
+            根据debug设置自动处理，如为正式环境，则调用已压缩js代码。
+            TODO: 需在模板内部进行具体设置处理。
+            :param string name: js文件名，不包括扩展名部分。
+            """
+            
+            self.initialize_render_data()
+            
+            if 'custom_js' not in self._render_data:
+                self._render_data['custom_js'] = []
             
             if self.settings.get('debug'):
-                self.render_data['custom_js'].append( "js/" + name + '.js' )
+                self._render_data['custom_js'].append( "js/" + name + '.js' )
                 return
             
-            return self.render_data['custom_js'].append( "js/" + name + '.min.js' )
+            return self._render_data['custom_js'].append( "js/" + name + '.min.js' )
 
         def add_css(self, name):
-            if 'custom_css' not in self.render_data:
-                self.render_data['custom_css'] = []
+        
+            """在页面中添加css文件，添加在head标签内。
+            根据debug设置自动处理，如为正式环境，则调用已压缩css代码。
+            TODO: 需在模板内部进行具体设置处理。
+            :param string name: css文件名，不包括扩展名部分。
+            """
+            
+            self.initialize_render_data()
+            
+            if 'custom_css' not in self._render_data:
+                self._render_data['custom_css'] = []
             
             if self.settings.get('debug'):
-                self.render_data['custom_css'].append( "css/" + name + '.css' )
+                self._render_data['custom_css'].append( "css/" + name + '.css' )
                 return
             
-            return self.render_data['custom_css'].append( "css/" + name + '.min.css' )
+            return self._render_data['custom_css'].append( "css/" + name + '.min.css' )
     
+    if 'template_namespace' in kwargs:
+        setattr(_base_handler, '_template_namespace', kwargs['template_namespace'])
+    if 'api_handlers' in kwargs:
+        setattr(_base_handler, '_api_handlers', kwargs['api_handlers'])
+    if 'authless_handlers' in kwargs:
+        setattr(_base_handler, '_authless_handlers', kwargs['authless_handlers'])
+    
+    if 'public_js' in kwargs:
+        def add_public_js(self):
+            for line in kwargs['public_js']:
+                self.add_js(line)
+        setattr(_base_handler, 'add_public_js', add_public_js)
+    
+    if 'public_css' in kwargs:
+        def add_public_css(self):
+            for line in kwargs['public_css']:
+                self.add_css(line)
+        setattr(_base_handler, 'add_public_css', add_public_css)
+
+    if 'current_user_handler' in kwargs:
+        setattr(_base_handler, 'get_current_user', kwargs['current_user_handler'])
+
     return _base_handler

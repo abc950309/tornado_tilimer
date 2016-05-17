@@ -30,7 +30,7 @@ class DataSession(container.generate_base_data_class(setting = session_setting, 
     """session的结构
     """
     
-    def __init__(self, data = None):
+    def initialize(self, data = None):
         if data:
             self.build(data)
     
