@@ -1,6 +1,11 @@
 import tornado.web
 import tornado_tilimer.struct as struct
 
+try:
+    import * from config
+except:
+    import * from tornado_tilimer.default_config
+
 _db = None
 
 def get_arg_by_list(needed = None, optional = None):
