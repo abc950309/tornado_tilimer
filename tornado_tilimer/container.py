@@ -261,8 +261,12 @@ class _multirefs(object):
 
     def __delitem__(self, key):
         del self._data[key]
+        self._length = self._length - 1
         if key < self._index:
             self._index = self._index - 1
+    
+    def __contains__(self, item):
+        return item in self._data
     
     def update(self, input):
         if isinstance(input, list):
