@@ -1,11 +1,11 @@
-import hashlib
-from autoclave import db
-import autoclave.file_tools as file_tools
-import autoclave.models as models
-from autoclave.js_tools import jsmin
+from .js_tools import jsmin
+import .static_data as static_data
+
 from csscompressor import compress
+import hashlib
 import os.path
 import os
+
 
 def _md5_for_file(f, block_size=2**20):
     md5 = hashlib.md5()
@@ -20,53 +20,49 @@ def md5_for_file(fname):
     with open(fname, 'rb') as f:
         return _md5_for_file(f)
 
-def write_file_json(dict):
-    """为静态文件随变化压缩提供记录方式
-    """
 
-def get_file_json():
-    """为静态文件随变化压缩提供提取方式
-    """
-
-def minfy_static_files(type, dealer):
-    raw_list = os.listdir( os.path.join( os.path.dirname(__file__), "static", type))
-    list = []
+def _minfy_static_files(root_path, dealer):
+    
+    raw_list = os.listdir(root_path)
+    
+    min_data_filename = os.path.join(root_path, '.min.json')
+    min_data = static_data.get_data(min_data_filename)
+    min_list = []
+    
     for line in raw_list:
-        if os.path.isdir( os.path.join( os.path.dirname(__file__), "static", type, line ) ):
+        if os.path.isdir( os.path.join( root_path, line ) ):
             continue
         if ".min." in line:
             continue
         file = ".".join(line.split(".")[0:-1])
-        path = os.path.join( os.path.dirname(__file__), "static", type, line )
+        ext = line.split(".")[-1]
+        file_path = os.path.join( root_path, line )
+        file_md5 = md5_for_file(file_path)
         
-        if not db.datas_meta.find_one({
-                "name": type + "_minfy",
-                "file": file,
-                "hash": file_tools.md5_for_file( path ),
-            }):
+        if file not in min_data or min_data.get(file, None) != file_md5:
             
-            print(("minfy " + type + " file " + file).title())
+            print(("minfy file " + file_path).title())
             
-            minfy_path = os.path.join( os.path.dirname(__file__), "static", type, file + ".min." + type )
+            minfy_path = os.path.join( root_path, file + ".min." + ext )
             
-            with open(path, "r", encoding = "utf-8") as input_f:
+            with open(file_path, "r", encoding = "utf-8") as input_f:
                 minfy_file = dealer(input_f.read())
             with open(minfy_path, "w", encoding = "utf-8") as output_f:
                 output_f.write(minfy_file)
             
-            db.datas_meta.update(
-                {
-                    "name": type + "_minfy",
-                    "file": file,
-                },
-                {
-                    "$set": {
-                        "hash": file_tools.md5_for_file( path )
-                    }
-                },
-                upsert = True
-            )
+            min_data[file] = file_md5
+        
+        min_list.append(file)
+    
+    for index in min_data:
+        if index not in min_list:
+            del min_data[min_data]
+    
+    if cmp(static_data.get_data(min_data_filename), min_data) != 0:
+        static_data.write_data(min_data_filename, min_data)
 
-
-minfy_static_files("js", jsmin)
-minfy_static_files("css", compress)
+def init_minfy(css_list = [], js_list = []):
+    for line in css_list:
+        minfy_static_files(line, compress)
+    for line in js_list:
+        minfy_static_files(line, jsmin)

@@ -3,9 +3,9 @@ import tornado_tilimer.base as base
 
 import time
 try:
-    import * from config
+    from config import *
 except:
-    import * from tornado_tilimer.default_config
+    from .default_config import *
 
 session_setting = {
     "_id": {

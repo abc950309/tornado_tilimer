@@ -1,12 +1,11 @@
 import tornado.web
-import tornado_tilimer.struct as struct
+import .struct as struct
+import .__init__ as init
 
 try:
-    import * from config
+    from config import *
 except:
-    import * from tornado_tilimer.default_config
-
-_db = None
+    from .default_config import *
 
 def get_arg_by_list(needed = None, optional = None):
     
@@ -37,13 +36,10 @@ def get_arg_by_list(needed = None, optional = None):
     return _deco
 
 
-def base_handler(db, **kwargs):
-    global _db
-    _db = db
+def base_handler(**kwargs):
     
     """通过这个函数获得 BaseHandler.
     
-    :param pymongo.collection.Collection db: APP 使用的 MongoDB Collection.
     :param dict template_namespace: 附加到 template 的 namespace 中的属性.
     :param dict api_handlers: 附加到 template 的 namespace 中的属性.
     :param dict authless_handlers: 附加到 template 的 namespace 中的属性.
@@ -53,14 +49,11 @@ def base_handler(db, **kwargs):
     """
     
     class _base_handler(tornado.web.RequestHandler):
-        
+
         """Base Handler，提供基本服务。
         添加了Session和验证处理。
         """
-        
-        global caches
-        _db = db
-        
+
         error_write = lambda self, error_name: (
             self._error_write(error_name) or self.finish()
         )

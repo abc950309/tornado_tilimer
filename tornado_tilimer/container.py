@@ -1,5 +1,5 @@
-from autoclave import db
-from autoclave.config import *
+from .__init__ import db
+
 import uuid
 import ObjectId from bson.objectid
 
@@ -14,7 +14,7 @@ def generate_caches_clear_func( name ):
                 del caches[name][line]
     return clear
 
-def generate_base_data_class( setting, collection_name, db ):
+def generate_base_data_class( setting, collection_name ):
 
     """参数为class的设置
     
@@ -81,7 +81,7 @@ def generate_base_data_class( setting, collection_name, db ):
             """
             
             new_obj = cls()
-            new_obj.build(db[cls._collection_name].find_one(
+            new_obj.build(db()[cls._collection_name].find_one(
                 filter
             ))
             return new_obj
@@ -116,7 +116,7 @@ def generate_base_data_class( setting, collection_name, db ):
             """
             
             if self._change_lock and not self._destroyed:
-                db[self._collection_name].replace_one(
+                db()[self._collection_name].replace_one(
                     filter = {'_id': self._data['_id']},
                     replacement = self._data,
                     upsert = True,
@@ -132,7 +132,7 @@ def generate_base_data_class( setting, collection_name, db ):
             self._data = {}
             self._ref_data = {}
             
-            db[self._collection_name].delete_many(
+            db()[self._collection_name].delete_many(
                 filter = {'_id': self._data['_id']},
             )
         
