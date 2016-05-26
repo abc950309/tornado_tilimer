@@ -1,5 +1,5 @@
-from .js_tools import jsmin
-import .static_data as static_data
+from tornado_tilimer.js_tools import jsmin
+import tornado_tilimer.static_data as static_data
 
 from csscompressor import compress
 import hashlib

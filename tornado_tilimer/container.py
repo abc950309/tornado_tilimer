@@ -1,7 +1,7 @@
-from .__init__ import db
+from tornado_tilimer import db
 
 import uuid
-import ObjectId from bson.objectid
+from bson.objectid import ObjectId
 
 def generate_caches_clear_func( name ):
     def clear(caches):
@@ -152,8 +152,8 @@ def generate_base_data_class( setting, collection_name ):
         
         def __getitem__(self, key):
             
-            """"通过数组形式获取的值为初始值
-            """"
+            """通过数组形式获取的值为初始值
+            """
             
             return self.get_raw(key)
         

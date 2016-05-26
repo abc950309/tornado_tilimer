@@ -1,6 +1,6 @@
 import tornado.web
-import .struct as struct
-import .__init__ as init
+import tornado_tilimer.struct as struct
+import tornado_tilimer as init
 
 try:
     from config import *
@@ -185,9 +185,9 @@ def base_handler(**kwargs):
             self.session = None
             self._render_data = {}
             
-            if self.ajax_flag or self.api_flag:
-            self.add_public_js()
-            self.add_public_css()
+            if not (self.ajax_flag or self.api_flag):
+                self.add_public_js()
+                self.add_public_css()
             
             self.initialize_session()
             
