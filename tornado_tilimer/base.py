@@ -1,11 +1,16 @@
 import tornado.web
 import tornado_tilimer.struct as struct
+import tornado_tilimer.ui_modules as ui_modules
+import tornado_tilimer.minfy as minfy
 import tornado_tilimer as init
+
+import collections
+import os.path
 
 try:
     from config import *
 except:
-    from .default_config import *
+    from tornado_tilimer.default_config import *
 
 def get_arg_by_list(needed = None, optional = None):
     
@@ -36,11 +41,48 @@ def get_arg_by_list(needed = None, optional = None):
     return _deco
 
 
-def base_handler(**kwargs):
+def add_files(type):
+    
+    """在页面中添加适当文件
+    """
+    
+    def _add_files(self, name):
+        self.initialize_render_data()
+        
+        if 'custom_' + type not in self._render_data:
+            self._render_data['custom_' + type] = []
+        
+        if self.is_absolute(name):
+            return self._render_data['custom_' + type].append( name )
+        
+        if self.settings.get('debug') or not minfy.minfy_flag():
+            return self._render_data['custom_' + type].append( ''.join( [type, "/", name, '.', type] ) )
+        
+        return self._render_data['custom_' + type].append( ''.join( [type, "/", name, '.min.', type] ) )
+    
+    return _add_files
+
+
+def BaseApplication(**kwargs):
+
+
+    class _application(tornado.web.Application):
+        def __init__(self, **settings):
+            if 'static_path' in settings:
+                minfy.init_minfy(
+                    os.path.join(settings['static_path'], 'css'),
+                    os.path.join(settings['static_path'], 'js'),
+                )
+            super().__init__(**settings)
+
+
+    return _application
+
+
+def BaseHandler(**kwargs):
     
     """通过这个函数获得 BaseHandler.
     
-    :param dict template_namespace: 附加到 template 的 namespace 中的属性.
     :param dict api_handlers: 附加到 template 的 namespace 中的属性.
     :param dict authless_handlers: 附加到 template 的 namespace 中的属性.
     :param dict public_js: 附加到 template 的 namespace 中的属性.
@@ -57,6 +99,10 @@ def base_handler(**kwargs):
         error_write = lambda self, error_name: (
             self._error_write(error_name) or self.finish()
         )
+
+
+        add_js = add_files('js')
+        add_css = add_files('css')
 
 
         @property
@@ -193,7 +239,7 @@ def base_handler(**kwargs):
             
             self.prepare_c()
             
-            if not (hasattr(self, '_authless_handlers') and self.class_name in self._authless_handlers):
+            if hasattr(self, '_authless_handlers') and self.class_name not in self._authless_handlers:
                 self.authenticate()
 
         
@@ -253,16 +299,31 @@ def base_handler(**kwargs):
             self._render_data[name] = val
 
 
+        def make_static_url_of_files(self, list):
+            for index in range(len(list)):
+                if not self.is_absolute(list[index]):
+                    list[index] = self.static_url(list[index], include_version=True)
+
+
         def put_render(self, template_name, **kwargs):
             
             """根据之前添加的数据渲染模板。
             
             :param template_name: 模板名.
             """
-            
             if not hasattr(self, '_render_data'):
                 self.render(template_name, **kwargs)
             else:
+                if 'custom_css' in self._render_data:
+                    if not hasattr(self, '_active_modules'):
+                        self._active_modules = collections.OrderedDict()
+                    self._active_modules['AutoCss'] = ui_modules.AutoCss(self)
+                    #self.make_static_url_of_files(self._render_data['custom_css'])
+                if 'custom_js' in self._render_data:
+                    if not hasattr(self, '_active_modules'):
+                        self._active_modules = collections.OrderedDict()
+                    self._active_modules['AutoJs'] = ui_modules.AutoJs(self)
+                    #self.make_static_url_of_files(self._render_data['custom_js'])
                 self._render_data.update(kwargs)
                 self._render_data['__keys__'] = self._render_data.keys()
                 self.render(template_name, **(self._render_data))
@@ -305,47 +366,12 @@ def base_handler(**kwargs):
                 })
             else:
                 return self.redirect("/" + self.class_name.replace("Handler", "") + "?show_type=danger&show_text=" + ERROR_CODES[error_name]['dscp'])
-        
-        def add_js(self, name):
-            
-            """在页面中添加js文件，添加在页面尾部。
-            根据debug设置自动处理，如为正式环境，则调用已压缩js代码。
-            TODO: 需在模板内部进行具体设置处理。
-            :param string name: js文件名，不包括扩展名部分。
-            """
-            
-            self.initialize_render_data()
-            
-            if 'custom_js' not in self._render_data:
-                self._render_data['custom_js'] = []
-            
-            if self.settings.get('debug'):
-                self._render_data['custom_js'].append( "js/" + name + '.js' )
-                return
-            
-            return self._render_data['custom_js'].append( "js/" + name + '.min.js' )
 
-        def add_css(self, name):
-        
-            """在页面中添加css文件，添加在head标签内。
-            根据debug设置自动处理，如为正式环境，则调用已压缩css代码。
-            TODO: 需在模板内部进行具体设置处理。
-            :param string name: css文件名，不包括扩展名部分。
-            """
-            
-            self.initialize_render_data()
-            
-            if 'custom_css' not in self._render_data:
-                self._render_data['custom_css'] = []
-            
-            if self.settings.get('debug'):
-                self._render_data['custom_css'].append( "css/" + name + '.css' )
-                return
-            
-            return self._render_data['custom_css'].append( "css/" + name + '.min.css' )
-    
-    if 'template_namespace' in kwargs:
-        setattr(_base_handler, '_template_namespace', kwargs['template_namespace'])
+        @staticmethod
+        def is_absolute(path):
+            return any(path.startswith(x) for x in ["/", "http:", "https:"])
+
+
     if 'api_handlers' in kwargs:
         setattr(_base_handler, '_api_handlers', kwargs['api_handlers'])
     if 'authless_handlers' in kwargs:

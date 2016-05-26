@@ -14,7 +14,7 @@ def generate_caches_clear_func( name ):
                 del caches[name][line]
     return clear
 
-def generate_base_data_class( setting, collection_name ):
+def generate_base_data_class( setting, name ):
 
     """参数为class的设置
     
@@ -40,15 +40,15 @@ def generate_base_data_class( setting, collection_name ):
         _direct_list = direct_list
         _ref_dict = ref_dict
         _multiref_dict = multiref_dict
-        _collection_name = collection_name
+        _name = name
         
         def __init__(self, *args, **kwargs):
             
             """对象初始化
             """
             
-            self._change_lock = False
-            self._destroyed = False
+            setattr(self, '_change_lock', False)
+            setattr(self, '_destroyed', False)
             self.initialize(*args, **kwargs)
         
         def initialize(self, *args, **kwargs):
@@ -81,13 +81,13 @@ def generate_base_data_class( setting, collection_name ):
             """
             
             new_obj = cls()
-            new_obj.build(db()[cls._collection_name].find_one(
+            new_obj.build(db()[cls._name].find_one(
                 filter
             ))
             return new_obj
         
         @classmethod
-        def get(cls):
+        def get(cls, id):
         
             """通过_id来获取数据
             """
@@ -116,7 +116,7 @@ def generate_base_data_class( setting, collection_name ):
             """
             
             if self._change_lock and not self._destroyed:
-                db()[self._collection_name].replace_one(
+                db()[self._name].replace_one(
                     filter = {'_id': self._data['_id']},
                     replacement = self._data,
                     upsert = True,
@@ -132,7 +132,7 @@ def generate_base_data_class( setting, collection_name ):
             self._data = {}
             self._ref_data = {}
             
-            db()[self._collection_name].delete_many(
+            db()[self._name].delete_many(
                 filter = {'_id': self._data['_id']},
             )
         
@@ -187,25 +187,34 @@ def generate_base_data_class( setting, collection_name ):
             """通过属性来设置值
             """
             
+            if key == "_change_lock" or key in self.__dict__:
+                self.__dict__[key] = value
+                return
+            
             self._change_lock = True
             
             if key in self._direct_list:
                 self._data[key] = value
+                if not self._change_lock:
+                    self._change_lock = True
             elif key in self._ref_dict:
                 if not (isinstance(value, string) or isinstance(value, int) or isinstance(value, ObjectId)):
                     value = value._id
                 self._data[key] = value
                 if key in self._ref_data:
                     del self._ref_data[key]
+                if not self._change_lock:
+                    self._change_lock = True
             elif key in self._multiref_dict:
                 if isinstance(value, _multirefs):
                     value = value._data
                 self._data[key] = value
                 if key in self._ref_data:
                     del self._ref_data[key]
+                if not self._change_lock:
+                    self._change_lock = True
             else:
-                self._change_lock = False
-                raise NameError("Key is not in the list!")
+                self.__dict__[key] = value
         
         def __delattr__(self, key):
             

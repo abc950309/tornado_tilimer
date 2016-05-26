@@ -1,11 +1,10 @@
 import tornado_tilimer.container as container
-import tornado_tilimer.base as base
 
 import time
 try:
     from config import *
 except:
-    from .default_config import *
+    from tornado_tilimer.default_config import *
 
 session_setting = {
     "_id": {
@@ -25,7 +24,7 @@ session_setting = {
     },
 }
 
-class DataSession(container.generate_base_data_class(setting = session_setting, collection_name = 'session', db = base._db)):
+class DataSession(container.generate_base_data_class(setting = session_setting, name = 'session')):
     
     """session的结构
     """
