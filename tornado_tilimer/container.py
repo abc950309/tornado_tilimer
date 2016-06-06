@@ -1,7 +1,11 @@
 from tornado_tilimer import db
 
 import uuid
+import time
 from bson.objectid import ObjectId
+
+pool = {}
+clean_couter = {}
 
 def generate_caches_clear_func( name ):
     def clear(caches):
@@ -14,7 +18,7 @@ def generate_caches_clear_func( name ):
                 del caches[name][line]
     return clear
 
-def generate_base_data_class( setting, name ):
+def generate_base_data_class(setting, name, cache = False):
 
     """参数为class的设置
     
@@ -74,6 +78,12 @@ def generate_base_data_class( setting, name ):
             self._data = data
             self._ref_data = {}
         
+        @classmethod 
+        def find_by_filter(cls, filter):
+            return db()[cls._name].find_one(
+                filter
+            )
+        
         @classmethod
         def get_by_filter(cls, filter):
         
@@ -93,6 +103,18 @@ def generate_base_data_class( setting, name ):
             """
             
             return cls.get_by_filter({"_id": id})
+
+        
+        @classmethod
+        def clean_data(cls):
+            pass
+        
+        @classmethod
+        def clean_db(cls):
+            pass
+        
+        def __del__(self):
+            self.save()
         
         @classmethod
         def new(cls):
@@ -110,7 +132,7 @@ def generate_base_data_class( setting, name ):
             pass
             
         
-        def save(self):
+        def save(self, *args, **kwargs):
             
             """保存当前结构体
             """
@@ -122,7 +144,15 @@ def generate_base_data_class( setting, name ):
                     upsert = True,
                 )
                 self._change_lock = False
+            
+            self.on_save(*args, **kwargs)
+            
+            self.clean_data()
         
+        def on_save(self):
+            
+            pass
+            
         def destroy(self):
             
             """摧毁当前对象所代表的数据库结构
@@ -135,6 +165,8 @@ def generate_base_data_class( setting, name ):
             db()[self._name].delete_many(
                 filter = {'_id': self._data['_id']},
             )
+            
+            del pool[self._name][self._id]
         
         def get_dict(self):
             
@@ -227,6 +259,71 @@ def generate_base_data_class( setting, name ):
                 if key in self._ref_data:
                     del self._ref_data[key]
     
+    if cache:
+    
+        @classmethod
+        def get_by_filter(cls, filter):
+        
+            """通过filter来获取数据
+            """
+            
+            data = False
+            
+            if "_id" not in filter:
+                data = cls.find_by_filter(filter)
+                id = data._id
+            else:
+                id = filter["_id"]
+            
+            if id not in pool[cls._name]:            
+                if data == False:
+                    data = cls.find_by_filter(filter)
+                
+                if data == None:
+                    return None
+                new_obj = cls()
+                new_obj.build(data)
+                pool[cls._name][id] = new_obj
+            
+            pool[cls._name][id].last_refer = int(time.time())
+            return pool[cls._name][id]
+
+        @classmethod
+        def get(cls, id):
+        
+            """通过_id来获取数据
+            """
+            
+            if id not in pool[cls._name]:
+                return cls.get_by_filter({"_id": id})
+            
+            pool[cls._name][id].last_refer = int(time.time())
+            return pool[cls._name][id]
+        
+        @classmethod
+        def clean_data(cls):
+            clean_couter[cls._name] = clean_couter[cls._name] + 1
+            if clean_couter[cls._name] > 1024:
+                now = int(time.time())
+                last_line = now - 3600
+
+                for index, val in pool[cls._name].items():
+                    if val.last_refer < last_line:
+                        del pool[cls._name][index]
+
+                if len(pool[cls._name]) > 1024:
+                    for line in sorted(pool[cls._name].items(), key=lambda d:d[1].last_refer, reverse = True)[1024:]:
+                        del pool[cls._name][line[0]]
+                
+                cls.clean_db()
+                
+                clean_couter[cls._name] = 0
+
+        setattr(base_data, "get_by_filter", get_by_filter)
+        setattr(base_data, "get", get)
+        setattr(base_data, "clean_data", clean_data)
+        clean_couter[name] = 0
+        
     return base_data
 
 class _multirefs(object):

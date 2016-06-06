@@ -41,3 +41,7 @@ class DataSession(container.generate_base_data_class(setting = session_setting, 
         if int(time.time()) > self.expired:
             self.destroy()
             return False
+    
+    @classmethod
+    def clean_db(cls):
+        db[self._name].delete_many({"expired": {"$lt": int(time.time())}})
