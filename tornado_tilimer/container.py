@@ -27,7 +27,9 @@ def generate_base_data_class(setting, name, cache = False):
     项内容为字符串 'MultiRef'，按照DBRef的List处理。
     项内容为字符串 'Direct'，按照正常内容处理。
     """
-
+    
+    global pool
+    
     direct_list = []
     ref_dict = {}
     multiref_dict = {}
@@ -323,6 +325,7 @@ def generate_base_data_class(setting, name, cache = False):
         setattr(base_data, "get", get)
         setattr(base_data, "clean_data", clean_data)
         clean_couter[name] = 0
+        pool[name] = {}
         
     return base_data
 
