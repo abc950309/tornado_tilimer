@@ -24,7 +24,7 @@ session_setting = {
     },
 }
 
-class DataSession(container.generate_base_data_class(setting = session_setting, name = 'session')):
+class DataSession(container.generate_base_data_class(setting = session_setting, name = 'session', cache = True)):
     
     """session的结构
     """
