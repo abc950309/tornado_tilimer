@@ -29,6 +29,7 @@ def generate_base_data_class(setting, name, cache = False):
     """
     
     global pool
+    global clean_couter
     
     direct_list = []
     ref_dict = {}
