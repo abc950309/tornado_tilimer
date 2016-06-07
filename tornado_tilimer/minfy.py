@@ -2,9 +2,11 @@ from tornado_tilimer.js_tools import jsmin
 import tornado_tilimer.static_data as static_data
 
 from csscompressor import compress
+import lesscpy
 import hashlib
 import os.path
 import os
+import io
 
 class Flag(object):
     
@@ -77,13 +79,17 @@ def _minfy_static_files(root_path, dealer):
     if not static_data.get_data(min_data_filename) == min_data:
         static_data.write_data(min_data_filename, min_data)
 
-def init_minfy(css = None, js = None, css_list = [], js_list = []):
+def init_minfy(css = None, js = None, less = None, css_list = [], js_list = [], less_list = []):
     minfy_flag.set(True)
     if len(css_list) == 0:
         css_list.append(css)
     if len(js_list) == 0:
-        css_list.append(js)
+        js_list.append(js)
+    if len(less_list) == 0:
+        less_list.append(less)
     for line in css_list:
         _minfy_static_files(line, compress)
     for line in js_list:
         _minfy_static_files(line, jsmin)
+    for line in less_list:
+        _minfy_static_files(line, lambda s: lesscpy.compile(io.StringIO(s), minify=True))

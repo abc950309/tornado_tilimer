@@ -41,28 +41,6 @@ def get_arg_by_list(needed = None, optional = None):
     return _deco
 
 
-def add_files(type):
-    
-    """在页面中添加适当文件
-    """
-    
-    def _add_files(self, name):
-        self.initialize_render_data()
-        
-        if 'custom_' + type not in self._render_data:
-            self._render_data['custom_' + type] = []
-        
-        if self.is_absolute(name):
-            return self._render_data['custom_' + type].append( name )
-        
-        if self.settings.get('debug') or not minfy.minfy_flag():
-            return self._render_data['custom_' + type].append( ''.join( [type, "/", name, '.', type] ) )
-        
-        return self._render_data['custom_' + type].append( ''.join( [type, "/", name, '.min.', type] ) )
-    
-    return _add_files
-
-
 def BaseApplication(**kwargs):
 
 
@@ -72,6 +50,7 @@ def BaseApplication(**kwargs):
                 minfy.init_minfy(
                     os.path.join(settings['static_path'], 'css'),
                     os.path.join(settings['static_path'], 'js'),
+                    os.path.join(settings['static_path'], 'less'),
                 )
             super().__init__(**settings)
 
@@ -99,11 +78,6 @@ def BaseHandler(**kwargs):
         error_write = lambda self, error_name: (
             self._error_write(error_name) or self.finish()
         )
-
-
-        add_js = add_files('js')
-        add_css = add_files('css')
-
 
         @property
         def class_name(self):
@@ -234,6 +208,7 @@ def BaseHandler(**kwargs):
             if not (self.ajax_flag or self.api_flag):
                 self.add_public_js()
                 self.add_public_css()
+                self.add_public_less()
             
             self.initialize_session()
             
@@ -263,6 +238,14 @@ def BaseHandler(**kwargs):
             pass
         
         def add_public_css(self):
+            
+            """为生成器准备的添加公共css脚本的钩子
+            假如您并未使用该特性，请按照您的意愿使用
+            """
+            
+            pass
+        
+        def add_public_less(self):
             
             """为生成器准备的添加公共css脚本的钩子
             假如您并未使用该特性，请按照您的意愿使用
@@ -305,6 +288,53 @@ def BaseHandler(**kwargs):
                     list[index] = self.static_url(list[index], include_version=True)
 
 
+        def add_less(self, name):
+            self.initialize_render_data()
+            
+            if self.settings.get('debug', False) or not minfy.minfy_flag():
+                self.less_flag = True
+                if 'custom_less' not in self._render_data:
+                    self._render_data['custom_less'] = []
+                
+                name = self.static_url(''.join(('less/', name, '.less')), include_version=True)
+                return self._render_data['custom_less'].append( ''.join(('<link rel="stylesheet/less" type="text/css" href="', name, '" />')))
+            
+            return self._render_data['custom_css'].append( ''.join(("less/", name, '.min.less')) )
+
+
+        def add_css(self, name):
+            self.initialize_render_data()
+            
+            if self.settings.get('debug', False) or not minfy.minfy_flag():
+                if 'custom_less' not in self._render_data:
+                    self._render_data['custom_less'] = []
+                if not self.is_absolute(name):
+                    name = self.static_url(''.join(('css/', name, '.css')), include_version=True)
+                
+                return self._render_data['custom_less'].append( ''.join(('<link href="', name, '" type="text/css" rel="stylesheet" />')) )
+            
+            if 'custom_css' not in self._render_data:
+                self._render_data['custom_css'] = []
+            if self.is_absolute(name):
+                return self._render_data['custom_css'].append( name )
+            return self._render_data['custom_css'].append( ''.join(('css/', name, '.min.css')) )
+
+
+        def add_js(self, name):
+            self.initialize_render_data()
+            
+            if 'custom_js' not in self._render_data:
+                self._render_data['custom_js'] = []
+            
+            if self.is_absolute(name):
+                return self._render_data['custom_js'].append( name )
+            
+            if self.settings.get('debug', False) or not minfy.minfy_flag():
+                return self._render_data['custom_js'].append( ''.join(("js/", name, '.js')) )
+            
+            return self._render_data['custom_js'].append( ''.join(("js/", name, '.min.js')) )
+
+
         def put_render(self, template_name, **kwargs):
             
             """根据之前添加的数据渲染模板。
@@ -323,6 +353,11 @@ def BaseHandler(**kwargs):
                     if not hasattr(self, '_active_modules'):
                         self._active_modules = collections.OrderedDict()
                     self._active_modules['AutoJs'] = ui_modules.AutoJs(self)
+                    #self.make_static_url_of_files(self._render_data['custom_js'])
+                if 'custom_less' in self._render_data:
+                    if not hasattr(self, '_active_modules'):
+                        self._active_modules = collections.OrderedDict()
+                    self._active_modules['AutoLess'] = ui_modules.AutoLess(self)
                     #self.make_static_url_of_files(self._render_data['custom_js'])
                 self._render_data.update(kwargs)
                 self._render_data['__keys__'] = self._render_data.keys()
@@ -388,7 +423,13 @@ def BaseHandler(**kwargs):
             for line in kwargs['public_css']:
                 self.add_css(line)
         setattr(_base_handler, 'add_public_css', add_public_css)
-
+    
+    if 'public_less' in kwargs:
+        def add_public_less(self):
+            for line in kwargs['public_less']:
+                self.add_less(line)
+        setattr(_base_handler, 'add_public_less', add_public_less)
+    
     if 'current_user_handler' in kwargs:
         setattr(_base_handler, 'get_current_user', kwargs['current_user_handler'])
 
