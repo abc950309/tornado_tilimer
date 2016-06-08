@@ -4,6 +4,8 @@ import uuid
 import time
 from bson.objectid import ObjectId
 
+from multirefs import _multirefs
+
 pool = {}
 clean_couter = {}
 
@@ -120,10 +122,11 @@ def generate_base_data_class(setting, name, cache = False):
             self.save()
         
         @classmethod
-        def new(cls):
+        def new(cls, *args, **kwargs):
             _id = str(uuid.uuid4().hex)
-            new_obj = cls({"_id": _id})
-            new_obj.create()
+            new_obj = cls()
+            new_obj.build({"_id": _id})
+            new_obj.create(*args, **kwargs)
             new_obj.save()
             return new_obj
         
@@ -212,7 +215,7 @@ def generate_base_data_class(setting, name, cache = False):
                 if key in self._ref_data:
                     return self._ref_data[key]
                 if key in self._data and self._data[key]:
-                    self._ref_data[key] = _multirefs(self._data[key], self.multiref_dict[key], self, key)
+                    self._ref_data[key] = _multirefs(self._data[key], self._multiref_dict[key])
                     return self._ref_data[key]
                 return None
             return None
@@ -243,6 +246,16 @@ def generate_base_data_class(setting, name, cache = False):
             elif key in self._multiref_dict:
                 if isinstance(value, _multirefs):
                     value = value._data
+                elif isinstance(value, list):
+                    value = [
+                            line
+                            if (isinstance(line, str) or isinstance(value, int) or isinstance(line, ObjectId)) else
+                            line._id
+                            for line in value
+                        ]
+                else:
+                    raise TypeError(repr(value) + " is not str or int or bson.objectid.ObjectId or Datas")
+                
                 self._data[key] = value
                 if key in self._ref_data:
                     del self._ref_data[key]
@@ -329,71 +342,3 @@ def generate_base_data_class(setting, name, cache = False):
         pool[name] = {}
         
     return base_data
-
-class _multirefs(object):
-    
-    def __init__(self, parent, key, handler):
-        self._parent = parent
-        self._key = key
-        
-        data = self._parent[self._key]
-        if data == None:
-            data = []
-        self._data = data
-        self._ref_list = {}
-        self._handler = handler
-        self._length = len(data)
-        self._index = 0
-
-    
-    def __iter__(self):
-        return self
-    
-    def __len__(self):
-        return self._length
-    
-    def __next__(self):
-        if self._index == self._length:
-            raise StopIteration
-        index = self._index
-        self._index = self._index + 1
-        return self[index]
-    
-    def __setitem__(self, key, value):
-        self._data[key] = value
-        if key in self._ref_list:
-            del self._ref_list[key]
-    
-    def __getitem__(self, key):
-        if key not in self._ref_list:
-            self._ref_list[key] = (self._handler)(self._data[key])
-        return self._ref_list[key]
-
-    def __delitem__(self, key):
-        del self._data[key]
-        self._length = self._length - 1
-        if key < self._index:
-            self._index = self._index - 1
-    
-    def __contains__(self, item):
-        return item in self._data
-    
-    def update(self, input):
-        if isinstance(input, list):
-            self._data.update(input)
-            self._length = len(self._data)
-        else:
-            self._data.push(input)
-            self._length = self._length + 1
-    
-    def delete(self, input):
-        if isinstance(input, list):
-            for line in input:
-                del self[self._data.index(line)]
-        else:
-            del self[self._data.index(input)]
-    
-    def clear(self):
-        self._data = []
-        self._length = 0
-        self._index = 0

@@ -100,6 +100,7 @@ Desktop.ini
 $RECYCLE.BIN/
 
 # Windows Installer files
+install.bat
 *.cab
 *.msi
 *.msm
