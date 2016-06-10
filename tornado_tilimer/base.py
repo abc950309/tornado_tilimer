@@ -88,6 +88,11 @@ def BaseHandler(**kwargs):
             return self.__class__.__name__
         
         @property
+        def ip_address(self):
+            # TODO
+            pass
+        
+        @property
         def api_flag(self):
             
             """确认是否为api

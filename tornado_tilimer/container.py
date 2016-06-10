@@ -1,13 +1,23 @@
 from tornado_tilimer import db
+from tornado_tilimer.multirefs import _multirefs
 
 import uuid
 import time
 from bson.objectid import ObjectId
 
-from multirefs import _multirefs
-
 pool = {}
 clean_couter = {}
+
+def check_data(cls):
+    return hasattr(cls, 'tornado_tilimer_datas_signal')
+
+def get_mixed_val(item, id = False):
+    if check_data(item):
+        return getattr(item, '_id', NotImplemented)
+    elif (not id) or isinstance(item, str) or isinstance(item, int) or isinstance(item, ObjectId):
+        return item
+    else:
+        return NotImplemented
 
 def generate_caches_clear_func( name ):
     def clear(caches):
@@ -33,7 +43,7 @@ def generate_base_data_class(setting, name, cache = False):
     global pool
     global clean_couter
     
-    direct_list = []
+    direct_list = ['_id']
     ref_dict = {}
     multiref_dict = {}
     for line in setting:
@@ -43,7 +53,9 @@ def generate_base_data_class(setting, name, cache = False):
             multiref_dict[line] = setting[line]['handler']
         else:
             direct_list.append(line)
-
+    
+    direct_list = tuple(direct_list)
+    
     class base_data(object):
         
         _direct_list = direct_list
@@ -74,6 +86,22 @@ def generate_base_data_class(setting, name, cache = False):
             """
             
             return self.__class__.__name__
+        
+        @property
+        def db(self):
+            return db()
+        
+        @staticmethod
+        def tornado_tilimer_datas_signal():
+            pass
+        
+        @property
+        def id(self):
+        
+            """获取 Class Name, 方便根据 Class Name 进行辨别.
+            """
+            
+            return self._id
 
         def build(self, data):
             
@@ -84,22 +112,27 @@ def generate_base_data_class(setting, name, cache = False):
             self._ref_data = {}
         
         @classmethod 
-        def find_by_filter(cls, filter):
-            return db()[cls._name].find_one(
-                filter
-            )
+        def find_by_filter(cls, filter, **kwargs):
+            return self.db[cls._name].find_one(filter, **kwargs)
         
         @classmethod
-        def get_by_filter(cls, filter):
+        def get_by_filter(cls, filter, **kwargs):
         
             """通过filter来获取数据
             """
             
+            data = cls.find_by_filter(filter, **kwargs)
+            if data == None:
+                return None
+            
             new_obj = cls()
-            new_obj.build(db()[cls._name].find_one(
-                filter
-            ))
+            new_obj.build(data)
             return new_obj
+        
+        @classmethod
+        def get_multi(cls, filter, **kwargs):
+            data = [x['_id'] for x in db[cls._name].find(filter, ('_id'), **kwargs)]
+            return _multirefs(data, cls.get)
         
         @classmethod
         def get(cls, id):
@@ -123,12 +156,16 @@ def generate_base_data_class(setting, name, cache = False):
         
         @classmethod
         def new(cls, *args, **kwargs):
-            _id = str(uuid.uuid4().hex)
+            _id = str(ObjectId())
             new_obj = cls()
             new_obj.build({"_id": _id})
             new_obj.create(*args, **kwargs)
             new_obj.save()
             return new_obj
+        
+        @property
+        def creation(self):
+            return int(self._id[0:8], 16)
         
         def create(self):
         
@@ -144,7 +181,7 @@ def generate_base_data_class(setting, name, cache = False):
             """
             
             if self._change_lock and not self._destroyed:
-                db()[self._name].replace_one(
+                self.db[self._name].replace_one(
                     filter = {'_id': self._data['_id']},
                     replacement = self._data,
                     upsert = True,
@@ -168,7 +205,7 @@ def generate_base_data_class(setting, name, cache = False):
             self._data = {}
             self._ref_data = {}
             
-            db()[self._name].delete_many(
+            self.db[self._name].delete_many(
                 filter = {'_id': self._data['_id']},
             )
             
@@ -229,7 +266,11 @@ def generate_base_data_class(setting, name, cache = False):
                 self.__dict__[key] = value
                 return
             
-            self._change_lock = True
+            if (
+                key in self.__class__.__dict__
+                and isinstance(self.__class__.__dict__[key], property)
+                and getattr(self.__class__.__dict__[key], 'fset', None) != None ):
+                return self.__class__.__dict__[key].__set__(self, value)
             
             if key in self._direct_list:
                 self._data[key] = value
@@ -247,12 +288,7 @@ def generate_base_data_class(setting, name, cache = False):
                 if isinstance(value, _multirefs):
                     value = value._data
                 elif isinstance(value, list):
-                    value = [
-                            line
-                            if (isinstance(line, str) or isinstance(value, int) or isinstance(line, ObjectId)) else
-                            line._id
-                            for line in value
-                        ]
+                    value = [get_mixed_val(line, id = True) for line in value]
                 else:
                     raise TypeError(repr(value) + " is not str or int or bson.objectid.ObjectId or Datas")
                 
@@ -268,6 +304,11 @@ def generate_base_data_class(setting, name, cache = False):
             
             """通过属性来删除值
             """
+            if (
+                key in self.__class__.__dict__
+                and isinstance(self.__class__.__dict__[key], property)
+                and getattr(self.__class__.__dict__[key], 'fdel', None) != None ):
+                return self.__class__.__dict__[key].__delete__(self)
             
             if key in self._data:
                 del self._data[key]
@@ -278,7 +319,7 @@ def generate_base_data_class(setting, name, cache = False):
     if cache:
     
         @classmethod
-        def get_by_filter(cls, filter):
+        def get_by_filter(cls, filter, **kwargs):
         
             """通过filter来获取数据
             """
@@ -286,17 +327,19 @@ def generate_base_data_class(setting, name, cache = False):
             data = False
             
             if "_id" not in filter:
-                data = cls.find_by_filter(filter)
-                id = data._id
+                data = cls.find_by_filter(filter, **kwargs)
+                if data == None:
+                    return None
+                id = data["_id"]
             else:
                 id = filter["_id"]
             
             if id not in pool[cls._name]:            
                 if data == False:
-                    data = cls.find_by_filter(filter)
+                    data = cls.find_by_filter(filter, **kwargs)
+                    if data == None:
+                        return None
                 
-                if data == None:
-                    return None
                 new_obj = cls()
                 new_obj.build(data)
                 pool[cls._name][id] = new_obj

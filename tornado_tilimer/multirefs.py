@@ -1,4 +1,5 @@
 from bson.objectid import ObjectId
+import tornado_tilimer.container
 
 class _multirefs_iter(object):
     __solts__ = [
@@ -42,12 +43,7 @@ class _multirefs(object):
         if isinstance(other, self.__class__):
             return self._data == other._data
         if isinstance(other, list):
-            other = [
-                    line
-                    if (isinstance(line, str) or isinstance(value, int) or isinstance(line, ObjectId)) else
-                    line._id
-                    for line in other
-                ]
+            other = [self._get_item_id(line) for line in other]
             return self._data == other
         
         return NotImplemented
@@ -56,12 +52,7 @@ class _multirefs(object):
         if isinstance(other, self.__class__):
             return self._data != other._data
         if isinstance(other, list):
-            other = [
-                    line
-                    if (isinstance(line, str) or isinstance(value, int) or isinstance(line, ObjectId)) else
-                    line._id
-                    for line in other
-                ]
+            other = [self._get_item_id(line) for line in other]
             return self._data != other
         
         return NotImplemented
@@ -70,12 +61,7 @@ class _multirefs(object):
         if isinstance(other, self.__class__):
             return self._data < other._data
         if isinstance(other, list):
-            other = [
-                    line
-                    if (isinstance(line, str) or isinstance(value, int) or isinstance(line, ObjectId)) else
-                    line._id
-                    for line in other
-                ]
+            other = [self._get_item_id(line) for line in other]
             return self._data < other
         
         return NotImplemented
@@ -84,12 +70,7 @@ class _multirefs(object):
         if isinstance(other, self.__class__):
             return self._data <= other._data
         if isinstance(other, list):
-            other = [
-                    line
-                    if (isinstance(line, str) or isinstance(value, int) or isinstance(line, ObjectId)) else
-                    line._id
-                    for line in other
-                ]
+            other = [self._get_item_id(line) for line in other]
             return self._data <= other
         
         return NotImplemented
@@ -98,12 +79,7 @@ class _multirefs(object):
         if isinstance(other, self.__class__):
             return self._data > other._data
         if isinstance(other, list):
-            other = [
-                    line
-                    if (isinstance(line, str) or isinstance(value, int) or isinstance(line, ObjectId)) else
-                    line._id
-                    for line in other
-                ]
+            other = [self._get_item_id(line) for line in other]
             return self._data > other
         
         return NotImplemented
@@ -112,12 +88,7 @@ class _multirefs(object):
         if isinstance(other, self.__class__):
             return self._data >= other._data
         if isinstance(other, list):
-            other = [
-                    line
-                    if (isinstance(line, str) or isinstance(value, int) or isinstance(line, ObjectId)) else
-                    line._id
-                    for line in other
-                ]
+            other = [self._get_item_id(line) for line in other]
             return self._data >= other
         
         return NotImplemented
@@ -158,12 +129,7 @@ class _multirefs(object):
             data = other._data
             ref_dict = other._ref_dict
         elif isinstance(other, list):
-            data = [
-                    line
-                    if (isinstance(line, str) or isinstance(line, int) or isinstance(line, ObjectId)) else
-                    line._id
-                    for line in other
-                ]
+            data = [self._get_item_id(line) for line in other]
         else:
             return NotImplemented
         
@@ -216,15 +182,8 @@ class _multirefs(object):
         if temp not in self._data and temp in self._ref_dict:
             del self._ref_dict[temp]
 
-    
-    def _get_item_id(self, item):
-        if (isinstance(item, str) or isinstance(item, int) or isinstance(item, ObjectId)):
-            id = item
-        else:
-            id = getattr(item, '_id', None)
-            if id == None:
-                return NotImplemented
-        return id
+
+    _get_item_id = lambda x: tornado_tilimer.container.get_mixed_val(x, id = True)
 
     def sort(self, key = None, reverse = False):
         if key != None:
