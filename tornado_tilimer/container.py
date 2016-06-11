@@ -30,6 +30,9 @@ def generate_caches_clear_func( name ):
                 del caches[name][line]
     return clear
 
+def get_obj_id():
+    return str(ObjectId())
+
 def generate_base_data_class(setting, name, cache = False):
 
     """参数为class的设置
@@ -111,6 +114,7 @@ def generate_base_data_class(setting, name, cache = False):
             self._data = data
             self._ref_data = {}
         
+        
         @classmethod 
         def find_by_filter(cls, filter, **kwargs):
             return self.db[cls._name].find_one(filter, **kwargs)
@@ -153,16 +157,27 @@ def generate_base_data_class(setting, name, cache = False):
         
         def __del__(self):
             self.save()
-        
+
+
         @classmethod
         def new(cls, *args, **kwargs):
-            _id = str(ObjectId())
+            id = get_obj_id()
             new_obj = cls()
-            new_obj.build({"_id": _id})
-            new_obj.create(*args, **kwargs)
+            new_obj.build({"_id": id})
+            if new_obj.create(*args, **kwargs) == False:
+                return False
             new_obj.save()
             return new_obj
-        
+
+        def renew(self):
+            id = get_obj_id()
+            new_obj = self.__class__.new()
+            new_obj.build({"_id": id})
+            new_obj._data = self._data
+            new_obj.save()
+            return new_obj
+
+
         @property
         def creation(self):
             return int(self._id[0:8], 16)
@@ -181,8 +196,12 @@ def generate_base_data_class(setting, name, cache = False):
             """
             
             if self._change_lock and not self._destroyed:
+                for index in self._data:
+                    if self._data[index] == None:
+                        del self._data[index]
+                
                 self.db[self._name].replace_one(
-                    filter = {'_id': self._data['_id']},
+                    filter = {'_id': self.id},
                     replacement = self._data,
                     upsert = True,
                 )
@@ -196,12 +215,14 @@ def generate_base_data_class(setting, name, cache = False):
             
             pass
             
-        def destroy(self):
+        def destroy(self, *args, **kwargs):
             
             """摧毁当前对象所代表的数据库结构
             """
             
-            self._destroyed = False
+            self.on_destroy(*args, **kwargs)
+            
+            self._destroyed = True
             self._data = {}
             self._ref_data = {}
             
@@ -209,7 +230,11 @@ def generate_base_data_class(setting, name, cache = False):
                 filter = {'_id': self._data['_id']},
             )
             
-            del pool[self._name][self._id]
+            if self._name in pool:
+                del pool[self._name][self._id]
+        
+        def on_destroy(self, *args, **kwargs):
+            pass
         
         def get_dict(self):
             
@@ -277,8 +302,7 @@ def generate_base_data_class(setting, name, cache = False):
                 if not self._change_lock:
                     self._change_lock = True
             elif key in self._ref_dict:
-                if not (isinstance(value, string) or isinstance(value, int) or isinstance(value, ObjectId)):
-                    value = value._id
+                value = get_mixed_val(value, id = True)
                 self._data[key] = value
                 if key in self._ref_data:
                     del self._ref_data[key]
