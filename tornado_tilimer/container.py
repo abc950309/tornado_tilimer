@@ -8,13 +8,18 @@ from bson.objectid import ObjectId
 pool = {}
 clean_couter = {}
 
+def get_obj_id():
+    return str(ObjectId())
+
+id_type = type(get_obj_id())
+
 def check_data(cls):
     return hasattr(cls, 'tornado_tilimer_datas_signal')
 
 def get_mixed_val(item, id = False):
     if check_data(item):
         return getattr(item, '_id', NotImplemented)
-    elif (not id) or isinstance(item, str) or isinstance(item, int) or isinstance(item, ObjectId):
+    elif (not id) or isinstance(item, id_type):
         return item
     else:
         return NotImplemented
@@ -29,9 +34,6 @@ def generate_caches_clear_func( name ):
             for line in need_to_del_list:
                 del caches[name][line]
     return clear
-
-def get_obj_id():
-    return str(ObjectId())
 
 def generate_base_data_class(setting, name, cache = False):
 

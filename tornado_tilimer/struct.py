@@ -9,9 +9,6 @@ except:
     from tornado_tilimer.default_config import *
 
 session_setting = {
-    "_id": {
-        "type": "Direct",
-    },
     "uid": {
         "type": "Direct",
     },

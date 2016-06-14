@@ -89,9 +89,8 @@ def BaseHandler(**kwargs):
         
         @property
         def ip_address(self):
-            # TODO
-            pass
-        
+            return self.request.headers.get("X-Real-IP") or self.request.remote_ip
+
         @property
         def api_flag(self):
             
