@@ -3,13 +3,15 @@ from tornado_tilimer.multirefs import _multirefs
 
 import uuid
 import time
-from bson.objectid import ObjectId
 
 pool = {}
 clean_couter = {}
 
 def get_obj_id():
-    return str(ObjectId())
+    return uuid.uuid1().hex
+
+def get_obj_id_time(id):
+    return int((uuid.UUID(id).time - 0x01b21dd213814000)*100/1e9)
 
 id_type = type(get_obj_id())
 
@@ -182,7 +184,7 @@ def generate_base_data_class(setting, name, cache = False):
 
         @property
         def creation(self):
-            return int(self._id[0:8], 16)
+            return get_obj_id_time(self.id)
         
         def create(self):
         
@@ -208,8 +210,7 @@ def generate_base_data_class(setting, name, cache = False):
                     upsert = True,
                 )
                 self._change_lock = False
-            
-            self.on_save(*args, **kwargs)
+                self.on_save(*args, **kwargs)
             
             self.clean_data()
         
