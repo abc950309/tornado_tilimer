@@ -24,7 +24,7 @@ def get_mixed_val(item, id = False):
     elif (not id) or isinstance(item, id_type):
         return item
     else:
-        return NotImplemented
+        raise NotImplementedError()
 
 def generate_caches_clear_func( name ):
     def clear(caches):

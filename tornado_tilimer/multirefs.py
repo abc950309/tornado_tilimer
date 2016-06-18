@@ -16,14 +16,26 @@ class _multirefs_iter(object):
 
 class _multirefs(object):
     
-    def __init__(self, data, handler):
+    def __init__(self, data, handler, parent = None):
         if data == None:
             data = []
         self._data = data
         self._ref_dict = {}
         self._handler = handler
         self._index = 0
+        self.parent = parent
 
+    @property
+    def _change_lock(self):
+        if self.parent != None:
+            return self.parent._change_lock
+        else:
+            return False
+
+    @_change_lock.setter
+    def _change_lock(self, value):
+        if self.parent != None:
+            self.parent._change_lock = value
 
     def get_by_id(self, id):
         if id not in self._ref_dict:
@@ -137,6 +149,7 @@ class _multirefs(object):
         if ref_dict != None:
             self._ref_dict.update(data)
         
+        self._change_lock = True
         return self
 
     def __mul__(self, other):
@@ -154,6 +167,7 @@ class _multirefs(object):
             return NotImplemented
         
         self._data *= other
+        self._change_lock = True
         return self
 
 
@@ -171,14 +185,18 @@ class _multirefs(object):
                 return NotImplemented
             self._ref_dict[id] = val
         
-        temp = self._data[key]
+        temp = self._data.get(key, None)
         self._data[key] = id
-        if temp not in self._data and temp in self._ref_dict:
+        self._change_lock = True
+        
+        if temp != None and temp not in self._data and temp in self._ref_dict:
             del self._ref_dict[temp]
 
     def __delitem__(self, key):
         temp = self._data[key]
         del self._data[key]
+        self._change_lock = True
+        
         if temp not in self._data and temp in self._ref_dict:
             del self._ref_dict[temp]
 
@@ -188,6 +206,7 @@ class _multirefs(object):
     def sort(self, key = None, reverse = False):
         if key != None:
             self._data = [x._id for x in sorted(self, key, reverse)]
+            self._change_lock = True
         elif reverse:
             self.reverse()
 
@@ -208,9 +227,11 @@ class _multirefs(object):
             raise TypeError(repr(item) + " is not str or bson.objectid.ObjectId or Datas")
         
         self._data.append(id)
+        self._change_lock = True
 
     def reverse(self):
         self._data.reverse()
+        self._change_lock = True
 
     def __reversed__(self):
         return _multirefs_iter(self, reversed)
@@ -232,11 +253,13 @@ class _multirefs(object):
         if id not in self._data and id in self._ref_dict:
             del self._ref_dict[id]
         
+        self._change_lock = True
         return obj
 
     def clear(self):
         self._data = []
         self._ref_dict = {}
+        self._change_lock = True
 
     extend = __iadd__
 
@@ -246,6 +269,7 @@ class _multirefs(object):
             raise TypeError(repr(item) + " is not str or bson.objectid.ObjectId or Datas")
 
         self._data.insert(key, val)
+        self._change_lock = True
 
     def remove(self, key):
         id = self._get_item_id(item)
@@ -253,5 +277,6 @@ class _multirefs(object):
             raise ValueError(repr(item) + " is not in list")
         
         self._data.remove(key)
+        self._change_lock = True
         if id not in self._data and id in self._ref_dict:
             del self._ref_dict[id]
