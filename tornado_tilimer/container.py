@@ -200,19 +200,22 @@ def generate_base_data_class(setting, name, cache = False):
             """
             
             if self._change_lock and not self._destroyed:
-                for index in self._data:
-                    if self._data[index] == None:
-                        del self._data[index]
-                
-                self.db[self._name].replace_one(
-                    filter = {'_id': self.id},
-                    replacement = self._data,
-                    upsert = True,
-                )
-                self._change_lock = False
-                self.on_save(*args, **kwargs)
+                self.force_save(*args, **kwargs)
             
             self.clean_data()
+        
+        def force_save(self, *args, **kwargs):
+            for index in self._data:
+                if self._data[index] == None:
+                    del self._data[index]
+            
+            self.db[self._name].replace_one(
+                filter = {'_id': self.id},
+                replacement = self._data,
+                upsert = True,
+            )
+            self._change_lock = False
+            self.on_save(*args, **kwargs)
         
         def on_save(self):
             

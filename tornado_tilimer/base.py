@@ -41,8 +41,15 @@ def get_arg_by_list(needed = None, optional = None):
     return _deco
 
 
-def BaseApplication(**kwargs):
+class Executor(ThreadPoolExecutor):
+    _instance = None
+    def __new__(cls, *args, **kwargs):
+        if not getattr(cls, '_instance', None):
+            cls._instance = ThreadPoolExecutor(max_workers=20)
+        return cls._instance
 
+
+def BaseApplication(**kwargs):
 
     class _application(tornado.web.Application):
         def __init__(self, **settings):
@@ -53,7 +60,6 @@ def BaseApplication(**kwargs):
                     os.path.join(settings['static_path'], 'less'),
                 )
             super().__init__(**settings)
-
 
     return _application
 
@@ -74,6 +80,8 @@ def BaseHandler(**kwargs):
         """Base Handler，提供基本服务。
         添加了Session和验证处理。
         """
+
+        executor = Executor()
 
         error_write = lambda self, error_name: (
             self._error_write(error_name) or self.finish()
@@ -121,6 +129,11 @@ def BaseHandler(**kwargs):
             
             self.session = struct.DataSession.new()
             self.session_id = self.session._id
+
+
+        @tornado.concurrent.run_on_executor
+        def run_on_executor(self, func, *args, **kwargs):
+            return func(*args, **kwargs)
 
 
         def get_session_id(self):
