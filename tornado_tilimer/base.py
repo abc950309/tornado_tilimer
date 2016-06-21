@@ -1,4 +1,5 @@
 import tornado.web
+import tornado.concurrent
 import tornado_tilimer.struct as struct
 import tornado_tilimer.ui_modules as ui_modules
 import tornado_tilimer.minfy as minfy
@@ -12,13 +13,21 @@ try:
 except:
     from tornado_tilimer.default_config import *
 
-def get_arg_by_list(needed = None, optional = None):
+def get_args(needed = None, optional = None, n = None, o = None):
     
     """目的为获取参数的装饰器
     
     :param list needed: 必须参数.
     :param list optional: 可选参数.
     """
+    
+    if n:
+        needed = n
+    if o:
+        optional = o
+    
+    needed = tuple(needed)
+    optional = tuple(optional)
     
     def _deco(func):
         def __deco(self, *args, **kwargs):
@@ -135,6 +144,32 @@ def BaseHandler(**kwargs):
         def run_on_executor(self, func, *args, **kwargs):
             return func(*args, **kwargs)
 
+        @tornado.concurrent.run_on_executor
+        def run_data_func(self, func, *args, caller = None, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except DataException as e:
+                if self._finished:
+                    raise RuntimeError("Cannot write() after finish()")
+                
+                if not (self.ajax_flag or self.api_flag):
+                    url = [self.request.headers.get("Referer", '/')]
+                    
+                    if '?' in url[0]:
+                        if url[0][-1] != '&':
+                            url.append('&')
+                    else:
+                        url.append('?')
+                    
+                    url.append('error_dscp=')
+                    url.append(str(e.dscp))
+                    url.append('&errno=')
+                    url.append(str(e.errno))
+                    self.redirect(''.join(url))
+
+                else:
+                    self.finish({'errno': e.errno, 'dscp': e.dscp})
+
 
         def get_session_id(self):
         
@@ -234,7 +269,7 @@ def BaseHandler(**kwargs):
             if hasattr(self, '_authless_handlers') and self.class_name not in self._authless_handlers:
                 self.authenticate()
 
-        
+
         def add_wait_to_save_data(self, data):
             
             """为自动数据保存做准备

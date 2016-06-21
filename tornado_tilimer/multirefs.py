@@ -116,7 +116,7 @@ class _multirefs(object):
         if (isinstance(item, str) or isinstance(item, int) or isinstance(item, ObjectId)) and item in self._data:
             return True
         
-        id = getattr(item, '_id', None)
+        id = getattr(item, 'id', None)
         if id != None and id in self._data:
             return True
         
@@ -180,7 +180,7 @@ class _multirefs(object):
         if (isinstance(val, str) or isinstance(val, int) or isinstance(val, ObjectId)):
             id = val
         else:
-            id = getattr(val, '_id', None)
+            id = getattr(val, 'id', None)
             if id == None:
                 return NotImplemented
             self._ref_dict[id] = val
@@ -205,7 +205,7 @@ class _multirefs(object):
 
     def sort(self, key = None, reverse = False):
         if key != None:
-            self._data = [x._id for x in sorted(self, key, reverse)]
+            self._data = [x.id for x in sorted(self, key, reverse)]
             self._change_lock = True
         elif reverse:
             self.reverse()

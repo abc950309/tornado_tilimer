@@ -8,6 +8,16 @@ try:
 except:
     from tornado_tilimer.default_config import *
 
+class DataException(Exception):
+
+    def __init__(self, errno, dscp):
+        self.errno = errno
+        self.dscp  = dscp
+    
+    def __str__(self):
+        return 'Datas have a error: ' + str(self.errno) + '. ' + self.dscp
+
+
 session_setting = {
     "uid": {
         "type": "Direct",
@@ -42,7 +52,7 @@ class DataSession(container.generate_base_data_class(setting = session_setting, 
     
     @classmethod
     def clean_db(cls):
-        cls.db[self._name].delete_many({"expired": {"$lt": int(time.time())}})
+        cls.db[cls._name].delete_many({"expired": {"$lt": int(time.time())}})
 
 class _structs(object):
     

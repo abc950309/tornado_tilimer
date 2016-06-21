@@ -1,6 +1,7 @@
 from tornado_tilimer import db
 from tornado_tilimer.multirefs import _multirefs
 
+from collections import UserDict
 import uuid
 import time
 
@@ -20,11 +21,14 @@ def check_data(cls):
 
 def get_mixed_val(item, id = False):
     if check_data(item):
-        return getattr(item, '_id', NotImplemented)
+        return getattr(item, 'id', NotImplemented)
     elif (not id) or isinstance(item, id_type):
         return item
     else:
         raise NotImplementedError()
+
+def get_names(func):
+    return tuple((func.__qualname__).split('.')[-2:])
 
 def generate_caches_clear_func( name ):
     def clear(caches):
@@ -36,6 +40,19 @@ def generate_caches_clear_func( name ):
             for line in need_to_del_list:
                 del caches[name][line]
     return clear
+
+class RawDataDict(UserDict):
+    def __init__(self, *args, data = None, **kwargs):
+        super(RawDataDict, self).__init__(*args, **kwargs)
+        self._base_data = data
+    
+    def __setitem__(self, key, item):
+        self.data[key] = item
+        self._base_data._change_lock = True
+    
+    def __delitem__(self, key):
+        del self.data[key]
+        self._base_data._change_lock = True
 
 def generate_base_data_class(setting, name, cache = False):
 
@@ -77,6 +94,7 @@ def generate_base_data_class(setting, name, cache = False):
             
             setattr(self, '_change_lock', False)
             setattr(self, '_destroyed', False)
+            self._data = RawDataDict({}, self)
             self.initialize(*args, **kwargs)
         
         def initialize(self, *args, **kwargs):
@@ -115,7 +133,7 @@ def generate_base_data_class(setting, name, cache = False):
             """由给定的数据，建立结构体
             """
             
-            self._data = data
+            self._data.update(data)
             self._ref_data = {}
         
         
@@ -141,6 +159,10 @@ def generate_base_data_class(setting, name, cache = False):
         def get_multi(cls, filter, **kwargs):
             data = [x['_id'] for x in db[cls._name].find(filter, ('_id'), **kwargs)]
             return _multirefs(data, cls.get)
+        
+        @classmethod
+        def count(cls, filter, **kwargs):
+            return db[cls._name].find(filter, ('_id'), **kwargs).count()
         
         @classmethod
         def get(cls, id):
@@ -229,7 +251,7 @@ def generate_base_data_class(setting, name, cache = False):
             self.on_destroy(*args, **kwargs)
             
             self._destroyed = True
-            self._data = {}
+            self._data = RawDataDict({}, self)
             self._ref_data = {}
             
             self.db[self._name].delete_many(
@@ -237,7 +259,7 @@ def generate_base_data_class(setting, name, cache = False):
             )
             
             if self._name in pool:
-                del pool[self._name][self._id]
+                del pool[self._name][self.id]
         
         def on_destroy(self, *args, **kwargs):
             pass
@@ -305,15 +327,11 @@ def generate_base_data_class(setting, name, cache = False):
             
             if key in self._direct_list:
                 self._data[key] = value
-                if not self._change_lock:
-                    self._change_lock = True
             elif key in self._ref_dict:
                 value = get_mixed_val(value, id = True)
                 self._data[key] = value
                 if key in self._ref_data:
                     del self._ref_data[key]
-                if not self._change_lock:
-                    self._change_lock = True
             elif key in self._multiref_dict:
                 if isinstance(value, _multirefs):
                     value = value._data
@@ -325,8 +343,6 @@ def generate_base_data_class(setting, name, cache = False):
                 self._data[key] = value
                 if key in self._ref_data:
                     del self._ref_data[key]
-                if not self._change_lock:
-                    self._change_lock = True
             else:
                 self.__dict__[key] = value
         
@@ -342,7 +358,6 @@ def generate_base_data_class(setting, name, cache = False):
             
             if key in self._data:
                 del self._data[key]
-                self._change_lock = True
                 if key in self._ref_data:
                     del self._ref_data[key]
     
