@@ -187,7 +187,7 @@ def generate_base_data_class(setting, name, cache = False):
             pass
         
         def __del__(self):
-            if new_obj.__created:
+            if not hasattr(self, '__creating'):
                 self.save()
 
 
@@ -196,11 +196,12 @@ def generate_base_data_class(setting, name, cache = False):
             id = get_obj_id()
             new_obj = cls()
             new_obj.build({"_id": id})
+            new_obj.__creating = True
             
             if new_obj.create(*args, **kwargs) == False:
                 return False
             else:
-                new_obj.__created = True
+                del new_obj.__creating
             
             new_obj.save()
             return new_obj
