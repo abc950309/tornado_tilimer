@@ -79,6 +79,46 @@ def _minfy_static_files(root_path, dealer):
     if not static_data.get_data(min_data_filename) == min_data:
         static_data.write_data(min_data_filename, min_data)
 
+def _minfy_static_less_files(root_path):
+    
+    raw_list = os.listdir(root_path)
+    
+    min_data_filename = os.path.join(root_path, '.min.json')
+    min_data = static_data.get_data(min_data_filename)
+    
+    if min_data == None:
+        min_data = {}
+    
+    min_list = []
+    
+    for line in raw_list:
+        if os.path.isdir( os.path.join( root_path, line ) ):
+            continue
+        if ".min." in line:
+            continue
+        file = ".".join(line.split(".")[0:-1])
+        ext = line.split(".")[-1]
+        file_path = os.path.join( root_path, line )
+        file_md5 = md5_for_file(file_path)
+        
+        if file not in min_data or min_data.get(file, None) != file_md5:
+            
+            print(("minfy file " + file_path).title())
+            minfy_path = os.path.join( root_path, file + ".min." + ext )
+            
+            os.system('lessc --clean-css "' + file_path + '" > "' + minfy_path + '"')
+            
+            min_data[file] = file_md5
+        
+        min_list.append(file)
+    
+    for index in min_data:
+        if index not in min_list:
+            del min_data[min_data]
+    
+    if not static_data.get_data(min_data_filename) == min_data:
+        static_data.write_data(min_data_filename, min_data)
+
 def init_minfy(css = None, js = None, less = None, css_list = [], js_list = [], less_list = []):
     minfy_flag.set(True)
     if len(css_list) == 0:
@@ -92,4 +132,4 @@ def init_minfy(css = None, js = None, less = None, css_list = [], js_list = [], 
     for line in js_list:
         _minfy_static_files(line, jsmin)
     for line in less_list:
-        _minfy_static_files(line, lambda s: lesscpy.compile(io.StringIO(s), minify=True))
+        _minfy_static_less_files(line)

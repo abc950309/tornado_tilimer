@@ -1,12 +1,16 @@
-from tornado_tilimer import db
+import tornado_tilimer
 from tornado_tilimer.multirefs import _multirefs
 
 from collections import UserDict
 import uuid
 import time
 
-pool = {}
+pool = {'setting': {}}
 clean_couter = {}
+
+class class_property(property):
+    def __get__(self, cls, owner):
+        return self.fget.__get__(None, owner)()
 
 def get_obj_id():
     return uuid.uuid1().hex
@@ -87,6 +91,11 @@ def generate_base_data_class(setting, name, cache = False):
         _multiref_dict = multiref_dict
         _name = name
         
+        @class_property
+        @classmethod
+        def db(cls):
+            return tornado_tilimer.db()
+        
         def __init__(self, *args, **kwargs):
             
             """对象初始化
@@ -94,7 +103,7 @@ def generate_base_data_class(setting, name, cache = False):
             
             setattr(self, '_change_lock', False)
             setattr(self, '_destroyed', False)
-            self._data = RawDataDict({}, self)
+            self._data = RawDataDict({}, data = self)
             self.initialize(*args, **kwargs)
         
         def initialize(self, *args, **kwargs):
@@ -111,10 +120,6 @@ def generate_base_data_class(setting, name, cache = False):
             """
             
             return self.__class__.__name__
-        
-        @property
-        def db(self):
-            return db()
         
         @staticmethod
         def tornado_tilimer_datas_signal():
@@ -139,7 +144,7 @@ def generate_base_data_class(setting, name, cache = False):
         
         @classmethod 
         def find_by_filter(cls, filter, **kwargs):
-            return self.db[cls._name].find_one(filter, **kwargs)
+            return cls.db[cls._name].find_one(filter, **kwargs)
         
         @classmethod
         def get_by_filter(cls, filter, **kwargs):
@@ -157,12 +162,12 @@ def generate_base_data_class(setting, name, cache = False):
         
         @classmethod
         def get_multi(cls, filter, **kwargs):
-            data = [x['_id'] for x in db[cls._name].find(filter, ('_id'), **kwargs)]
+            data = [x['_id'] for x in cls.db[cls._name].find(filter, ('_id'), **kwargs)]
             return _multirefs(data, cls.get)
         
         @classmethod
         def count(cls, filter, **kwargs):
-            return db[cls._name].find(filter, ('_id'), **kwargs).count()
+            return cls.db[cls._name].find(filter, ('_id'), **kwargs).count()
         
         @classmethod
         def get(cls, id):
@@ -182,7 +187,8 @@ def generate_base_data_class(setting, name, cache = False):
             pass
         
         def __del__(self):
-            self.save()
+            if new_obj.__created:
+                self.save()
 
 
         @classmethod
@@ -190,16 +196,20 @@ def generate_base_data_class(setting, name, cache = False):
             id = get_obj_id()
             new_obj = cls()
             new_obj.build({"_id": id})
+            
             if new_obj.create(*args, **kwargs) == False:
                 return False
+            else:
+                new_obj.__created = True
+            
             new_obj.save()
             return new_obj
 
         def renew(self):
             id = get_obj_id()
-            new_obj = self.__class__.new()
-            new_obj.build({"_id": id})
-            new_obj._data = self._data
+            new_obj = self.__class__()
+            new_obj.build(self._data)
+            new_obj.build({'_id': id})
             new_obj.save()
             return new_obj
 
@@ -227,6 +237,8 @@ def generate_base_data_class(setting, name, cache = False):
             self.clean_data()
         
         def force_save(self, *args, **kwargs):
+            self.on_save(*args, **kwargs)
+            
             for index in self._data:
                 if self._data[index] == None:
                     del self._data[index]
@@ -237,8 +249,7 @@ def generate_base_data_class(setting, name, cache = False):
                 upsert = True,
             )
             self._change_lock = False
-            self.on_save(*args, **kwargs)
-        
+
         def on_save(self):
             
             pass
@@ -258,7 +269,7 @@ def generate_base_data_class(setting, name, cache = False):
                 filter = {'_id': self._data['_id']},
             )
             
-            if self._name in pool:
+            if hasattr(self, '_pool') and self._name in self._pool:
                 del pool[self._name][self.id]
         
         def on_destroy(self, *args, **kwargs):
@@ -291,25 +302,20 @@ def generate_base_data_class(setting, name, cache = False):
             """
             
             if key in self._direct_list:
-                return self._data[key] if key in self._data else None
+                return self._data.get(key, None)
             
             elif key in self._ref_dict:
-                if key in self._ref_data:
-                    return self._ref_data[key]
-                if key in self._data and self._data[key]:
+                if key not in self._ref_data and key in self._data and self._data[key]:
                     self._ref_data[key] = self._ref_dict[key](self._data[key])
-                    return self._ref_data[key]
-                return None
+                return self._ref_data.get(key, None)
             
             elif key in self._multiref_dict:
-                if key in self._ref_data:
-                    return self._ref_data[key]
-                if key in self._data and self._data[key]:
-                    self._ref_data[key] = _multirefs(self._data[key], self._multiref_dict[key])
-                    return self._ref_data[key]
-                return None
-            return None
+                if key not in self._ref_data and key in self._data and isinstance(self._data[key], list):
+                    self._ref_data[key] = _multirefs(self._data[key], self._multiref_dict[key], parent = self)
+                return self._ref_data.get(key, None)
             
+            return None
+        
         def __setattr__(self, key, value):
             
             """通过属性来设置值
@@ -319,8 +325,7 @@ def generate_base_data_class(setting, name, cache = False):
                 self.__dict__[key] = value
                 return
             
-            if (
-                key in self.__class__.__dict__
+            if ( key in self.__class__.__dict__
                 and isinstance(self.__class__.__dict__[key], property)
                 and getattr(self.__class__.__dict__[key], 'fset', None) != None ):
                 return self.__class__.__dict__[key].__set__(self, value)
@@ -350,8 +355,7 @@ def generate_base_data_class(setting, name, cache = False):
             
             """通过属性来删除值
             """
-            if (
-                key in self.__class__.__dict__
+            if ( key in self.__class__.__dict__
                 and isinstance(self.__class__.__dict__[key], property)
                 and getattr(self.__class__.__dict__[key], 'fdel', None) != None ):
                 return self.__class__.__dict__[key].__delete__(self)
@@ -360,6 +364,8 @@ def generate_base_data_class(setting, name, cache = False):
                 del self._data[key]
                 if key in self._ref_data:
                     del self._ref_data[key]
+            else:
+                del self.__dict__[key]
     
     if cache:
     
@@ -368,18 +374,18 @@ def generate_base_data_class(setting, name, cache = False):
         
             """通过filter来获取数据
             """
-            
+
             data = False
             
-            if "_id" not in filter:
+            if "_id" in filter:
+                id = filter["_id"]
+            else:
                 data = cls.find_by_filter(filter, **kwargs)
                 if data == None:
                     return None
                 id = data["_id"]
-            else:
-                id = filter["_id"]
             
-            if id not in pool[cls._name]:            
+            if id not in cls._pool[cls._name]:            
                 if data == False:
                     data = cls.find_by_filter(filter, **kwargs)
                     if data == None:
@@ -387,10 +393,10 @@ def generate_base_data_class(setting, name, cache = False):
                 
                 new_obj = cls()
                 new_obj.build(data)
-                pool[cls._name][id] = new_obj
+                cls._pool[cls._name][id] = new_obj
             
-            pool[cls._name][id].last_refer = int(time.time())
-            return pool[cls._name][id]
+            cls._pool[cls._name][id].last_refer = int(time.time())
+            return cls._pool[cls._name][id]
 
         @classmethod
         def get(cls, id):
@@ -398,34 +404,36 @@ def generate_base_data_class(setting, name, cache = False):
             """通过_id来获取数据
             """
             
-            if id not in pool[cls._name]:
+            if id not in cls._pool[cls._name]:
                 return cls.get_by_filter({"_id": id})
             
-            pool[cls._name][id].last_refer = int(time.time())
-            return pool[cls._name][id]
+            cls._pool[cls._name][id].last_refer = int(time.time())
+            return cls._pool[cls._name][id]
         
         @classmethod
         def clean_data(cls):
-            clean_couter[cls._name] = clean_couter[cls._name] + 1
-            if clean_couter[cls._name] > 1024:
+            cls._clean_couter[cls._name] = cls._clean_couter[cls._name] + 1
+            if cls._clean_couter[cls._name] > 1024:
                 now = int(time.time())
                 last_line = now - 3600
 
-                for index, val in pool[cls._name].items():
+                for index, val in cls._pool[cls._name].items():
                     if val.last_refer < last_line:
-                        del pool[cls._name][index]
+                        del cls._pool[cls._name][index]
 
-                if len(pool[cls._name]) > 1024:
-                    for line in sorted(pool[cls._name].items(), key=lambda d:d[1].last_refer, reverse = True)[1024:]:
-                        del pool[cls._name][line[0]]
+                if len(cls._pool[cls._name]) > 1024:
+                    for line in sorted(cls._pool[cls._name].items(), key=lambda d:d[1].last_refer, reverse = True)[1024:]:
+                        del cls._pool[cls._name][line[0]]
                 
                 cls.clean_db()
                 
-                clean_couter[cls._name] = 0
+                cls._clean_couter[cls._name] = 0
 
         setattr(base_data, "get_by_filter", get_by_filter)
         setattr(base_data, "get", get)
         setattr(base_data, "clean_data", clean_data)
+        setattr(base_data, "_pool", pool)
+        setattr(base_data, "_clean_couter", clean_couter)
         clean_couter[name] = 0
         pool[name] = {}
         

@@ -45,6 +45,12 @@ class DataSession(container.generate_base_data_class(setting = session_setting, 
     def create(self):
         self.expired = self.creation + EXPIRED_TIME
     
+    @property
+    def data(self):
+        if 'data' not in self._data:
+            self._data['data'] = {}
+        return self._data['data']
+    
     def test_expire(self):
         if int(time.time()) > self.expired:
             self.destroy()
@@ -60,7 +66,13 @@ class _structs(object):
         setattr(self, 'DataSession', DataSession)
 
     def add_struct(self, item):
-        if isinstance(item, types.ModuleType):
+        if isinstance(item, str):
+            item = __import__(item, globals(), locals(), [], 0)
+            for n in dir(item):
+                if container.check_data(getattr(item, n)):
+                    setattr(self, n, getattr(item, n))
+        
+        elif isinstance(item, types.ModuleType):
             for n in dir(item):
                 if container.check_data(getattr(item, n)):
                     setattr(self, n, getattr(item, n))

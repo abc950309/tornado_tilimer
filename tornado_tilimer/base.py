@@ -5,6 +5,8 @@ import tornado_tilimer.ui_modules as ui_modules
 import tornado_tilimer.minfy as minfy
 import tornado_tilimer as init
 
+from concurrent.futures import ThreadPoolExecutor
+
 import collections
 import os.path
 
@@ -12,6 +14,8 @@ try:
     from config import *
 except:
     from tornado_tilimer.default_config import *
+
+DataException = struct.DataException
 
 def get_args(needed = None, optional = None, n = None, o = None):
     
@@ -26,8 +30,10 @@ def get_args(needed = None, optional = None, n = None, o = None):
     if o:
         optional = o
     
-    needed = tuple(needed)
-    optional = tuple(optional)
+    if needed:
+        needed = tuple(needed)
+    if optional:
+        optional = tuple(optional)
     
     def _deco(func):
         def __deco(self, *args, **kwargs):
@@ -149,40 +155,49 @@ def BaseHandler(**kwargs):
             try:
                 return func(*args, **kwargs)
             except DataException as e:
-                if self._finished:
-                    raise RuntimeError("Cannot write() after finish()")
+                self.show_exception(e)
+
+        def show_exception(self, *args):
+            if not isinstance(args[0], DataException):
+                e = DataException(*args)
+            else:
+                e = args[0]
+            
+            if self._finished:
+                raise RuntimeError("Cannot write() after finish()")
+            
+            if not (self.ajax_flag or self.api_flag):
+                url = [self.request.headers.get("Referer", '/')]
                 
-                if not (self.ajax_flag or self.api_flag):
-                    url = [self.request.headers.get("Referer", '/')]
-                    
-                    if '?' in url[0]:
-                        if url[0][-1] != '&':
-                            url.append('&')
-                    else:
-                        url.append('?')
-                    
-                    url.append('error_dscp=')
-                    url.append(str(e.dscp))
-                    url.append('&errno=')
-                    url.append(str(e.errno))
-                    self.redirect(''.join(url))
-
+                if '?' in url[0]:
+                    if url[0][-1] != '&':
+                        url.append('&')
                 else:
-                    self.finish({'errno': e.errno, 'dscp': e.dscp})
+                    url.append('?')
+                
+                url.append('error_dscp=')
+                url.append(str(e.dscp))
+                url.append('&errno=')
+                url.append(str(e.errno))
+                self.redirect(''.join(url))
 
+            else:
+                self.finish({'errno': e.errno, 'dscp': e.dscp})
 
         def get_session_id(self):
         
             """获取 session_id.
             """
             if self.api_flag:
-                return self.get_argument('token', None)
+                raw_session_id = self.get_argument('token', None)
+                if raw_session_id:
+                    return raw_session_id
+            
+            if self.settings.get('cookie_secret'):
+                raw_session_id = self.get_secure_cookie("token")
+                return (raw_session_id.decode() if raw_session_id else None)
             else:
-                if self.settings.get('cookie_secret'):
-                    raw_session_id = self.get_secure_cookie("token")
-                    return (raw_session_id.decode() if raw_session_id else None)
-                else:
-                    return self.get_cookie("token")
+                return self.get_cookie("token")
 
 
         def initialize_session(self):
