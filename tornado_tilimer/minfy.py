@@ -133,3 +133,20 @@ def init_minfy(css = None, js = None, less = None, css_list = [], js_list = [], 
         _minfy_static_files(line, jsmin)
     for line in less_list:
         _minfy_static_less_files(line)
+
+'''
+    for line in css_list:
+        try:
+            _minfy_static_files(line, compress)
+        except:
+            pass
+    for line in js_list:
+        try:
+            _minfy_static_files(line, jsmin)
+        except:
+            pass
+    for line in less_list:
+        try:
+            _minfy_static_less_files(line)
+        except:
+            pass'''

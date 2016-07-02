@@ -46,9 +46,9 @@ def get_args(needed = None, optional = None, n = None, o = None):
                         self.finish()
             if optional:
                 for line in optional:
-                    arguments[line] = self.get_argument(line, None)
-                    if arguments[line] and len(arguments[line]) == 0:
-                        arguments[line] = None
+                    temp_argument = self.get_argument(line, None)
+                    if temp_argument and temp_argument != '':
+                        arguments[line] = temp_argument
             
             kwargs.update(arguments)
             return func(self, *args, **kwargs)
@@ -97,10 +97,6 @@ def BaseHandler(**kwargs):
         """
 
         executor = Executor()
-
-        error_write = lambda self, error_name: (
-            self._error_write(error_name) or self.finish()
-        )
 
         @property
         def class_name(self):
@@ -151,13 +147,13 @@ def BaseHandler(**kwargs):
             return func(*args, **kwargs)
 
         @tornado.concurrent.run_on_executor
-        def run_data_func(self, func, *args, caller = None, **kwargs):
+        def run_data_func(self, func, *args, **kwargs):
             try:
                 return func(*args, **kwargs)
             except DataException as e:
                 self.show_exception(e)
 
-        def show_exception(self, *args):
+        def show_exception(self, *args, header = None):
             if not isinstance(args[0], DataException):
                 e = DataException(*args)
             else:
@@ -175,10 +171,13 @@ def BaseHandler(**kwargs):
                 else:
                     url.append('?')
                 
-                url.append('error_dscp=')
+                url.append('dscp=')
                 url.append(str(e.dscp))
                 url.append('&errno=')
                 url.append(str(e.errno))
+                if header:
+                    url.append('&header=')
+                    url.append(str(header))
                 self.redirect(''.join(url))
 
             else:
@@ -293,7 +292,8 @@ def BaseHandler(**kwargs):
             if not hasattr(self, '_wait_to_save_data'):
                 self._wait_to_save_data = []
             
-            self._wait_to_save_data.append(data)
+            if data not in self._wait_to_save_data:
+                self._wait_to_save_data.append(data)
             
         
         def add_public_js(self):
@@ -458,16 +458,6 @@ def BaseHandler(**kwargs):
             if hasattr(self, '_wait_to_save_data'):
                 for line in self._wait_to_save_data:
                     line.save()
-
-
-        def _error_write(self, error_name):
-            if self.ajax_flag:
-                self.write({
-                    "status": ERROR_CODES[error_name]['code'],
-                    "dscp": ERROR_CODES[error_name]['dscp'],
-                })
-            else:
-                return self.redirect("/" + self.class_name.replace("Handler", "") + "?show_type=danger&show_text=" + ERROR_CODES[error_name]['dscp'])
 
         @staticmethod
         def is_absolute(path):

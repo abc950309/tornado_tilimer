@@ -240,7 +240,7 @@ def generate_base_data_class(setting, name, cache = False):
         def force_save(self, *args, **kwargs):
             self.on_save(*args, **kwargs)
             
-            for index in self._data:
+            for index in list(self._data.keys()):
                 if self._data[index] == None:
                     del self._data[index]
             
