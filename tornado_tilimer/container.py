@@ -2,6 +2,7 @@ import tornado_tilimer
 from tornado_tilimer.multirefs import _multirefs
 
 from collections import UserDict
+import traceback
 import uuid
 import time
 
@@ -46,17 +47,19 @@ def generate_caches_clear_func( name ):
     return clear
 
 class RawDataDict(UserDict):
-    def __init__(self, *args, data = None, **kwargs):
+    def __init__(self, *args, data, **kwargs):
         super(RawDataDict, self).__init__(*args, **kwargs)
         self._base_data = data
     
     def __setitem__(self, key, item):
         self.data[key] = item
-        self._base_data._change_lock = True
+        if self._base_data._builded:
+            self._base_data._change_lock = True
     
     def __delitem__(self, key):
         del self.data[key]
-        self._base_data._change_lock = True
+        if self._base_data._builded:
+            self._base_data._change_lock = True
 
 def generate_base_data_class(setting, name, cache = False):
 
@@ -103,6 +106,7 @@ def generate_base_data_class(setting, name, cache = False):
             
             setattr(self, '_change_lock', False)
             setattr(self, '_destroyed', False)
+            setattr(self, '_builded', False)
             self._data = RawDataDict({}, data = self)
             self.initialize(*args, **kwargs)
         
@@ -140,6 +144,7 @@ def generate_base_data_class(setting, name, cache = False):
             
             self._data.update(data)
             self._ref_data = {}
+            setattr(self, '_builded', True)
         
         
         @classmethod 
@@ -187,8 +192,7 @@ def generate_base_data_class(setting, name, cache = False):
             pass
         
         def __del__(self):
-            if not hasattr(self, '__creating'):
-                self.save()
+            self.save()
 
 
         @classmethod
@@ -196,12 +200,12 @@ def generate_base_data_class(setting, name, cache = False):
             id = get_obj_id()
             new_obj = cls()
             new_obj.build({"_id": id})
-            new_obj.__creating = True
+            new_obj.__dict__['__creating'] = True
             
             if new_obj.create(*args, **kwargs) == False:
                 return False
             else:
-                del new_obj.__creating
+                del new_obj.__dict__['__creating']
             
             new_obj.save()
             return new_obj
@@ -231,24 +235,29 @@ def generate_base_data_class(setting, name, cache = False):
             
             """保存当前结构体
             """
-            
             if self._change_lock and not self._destroyed:
                 self.force_save(*args, **kwargs)
-            
             self.clean_data()
         
         def force_save(self, *args, **kwargs):
-            self.on_save(*args, **kwargs)
+            if self.__dict__.get('__creating', False):
+                return
             
+            self.on_save(*args, **kwargs)
             for index in list(self._data.keys()):
                 if self._data[index] == None:
                     del self._data[index]
             
-            self.db[self._name].replace_one(
+            print(self)
+            print(self._data)
+            print('_change_lock', self._change_lock)
+            print('update_one')
+            print(self.db[self._name].update_one(
                 filter = {'_id': self.id},
-                replacement = self._data,
+                update = { '$set': self._data },
                 upsert = True,
-            )
+            ).raw_result)
+            
             self._change_lock = False
 
         def on_save(self):
@@ -261,17 +270,19 @@ def generate_base_data_class(setting, name, cache = False):
             """
             
             self.on_destroy(*args, **kwargs)
-            
             self._destroyed = True
-            self._data = RawDataDict({}, self)
-            self._ref_data = {}
             
             self.db[self._name].delete_many(
                 filter = {'_id': self._data['_id']},
             )
             
-            if hasattr(self, '_pool') and self._name in self._pool:
-                del pool[self._name][self.id]
+            try:
+                del pool[self._name][self._data['_id']]
+            except KeyError:
+                pass
+            
+            self._data = RawDataDict({}, data = self)
+            self._ref_data = {}
         
         def on_destroy(self, *args, **kwargs):
             pass
@@ -321,8 +332,8 @@ def generate_base_data_class(setting, name, cache = False):
             
             """通过属性来设置值
             """
-            
-            if key == "_change_lock" or key in self.__dict__:
+
+            if key in self.__dict__:
                 self.__dict__[key] = value
                 return
             
@@ -333,12 +344,20 @@ def generate_base_data_class(setting, name, cache = False):
             
             if key in self._direct_list:
                 self._data[key] = value
+                return
             elif key in self._ref_dict:
+                if value == None:
+                    self.__delattr__(key)
+                    return
                 value = get_mixed_val(value, id = True)
                 self._data[key] = value
                 if key in self._ref_data:
                     del self._ref_data[key]
+                return
             elif key in self._multiref_dict:
+                if value == None:
+                    self.__delattr__(key)
+                    return
                 if isinstance(value, _multirefs):
                     value = value._data
                 elif isinstance(value, list):
@@ -349,6 +368,7 @@ def generate_base_data_class(setting, name, cache = False):
                 self._data[key] = value
                 if key in self._ref_data:
                     del self._ref_data[key]
+                return
             else:
                 self.__dict__[key] = value
         
@@ -365,7 +385,7 @@ def generate_base_data_class(setting, name, cache = False):
                 del self._data[key]
                 if key in self._ref_data:
                     del self._ref_data[key]
-            else:
+            elif key in self.__dict__:
                 del self.__dict__[key]
     
     if cache:

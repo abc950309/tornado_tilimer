@@ -205,7 +205,7 @@ class _multirefs(object):
 
     def sort(self, key = None, reverse = False):
         if key != None:
-            self._data = [x.id for x in sorted(self, key, reverse)]
+            self._data = [x.id for x in sorted(self, key = key, reverse = reverse)]
             self._change_lock = True
         elif reverse:
             self.reverse()

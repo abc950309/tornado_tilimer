@@ -17,7 +17,7 @@ except:
 
 DataException = struct.DataException
 
-def get_args(needed = None, optional = None, n = None, o = None):
+def get_args(needed = None, optional = None, n = None, o = None, body_only = False):
     
     """目的为获取参数的装饰器
     
@@ -35,18 +35,23 @@ def get_args(needed = None, optional = None, n = None, o = None):
     if optional:
         optional = tuple(optional)
     
+    if body_only:
+        _argument = tornado.web.RequestHandler.get_body_argument
+    else:
+        _argument = tornado.web.RequestHandler.get_argument
+    
     def _deco(func):
         def __deco(self, *args, **kwargs):
             arguments = {}
             if needed:
                 for line in needed:
-                    arguments[line] = self.get_argument(line, None)
+                    arguments[line] = _argument(self, line, None)
                     if not arguments[line] or len(arguments[line]) == 0:
                         raise tornado.web.HTTPError(400)
-                        self.finish()
+                        return self.finish()
             if optional:
                 for line in optional:
-                    temp_argument = self.get_argument(line, None)
+                    temp_argument = _argument(self, line, None)
                     if temp_argument and temp_argument != '':
                         arguments[line] = temp_argument
             
@@ -290,10 +295,10 @@ def BaseHandler(**kwargs):
             """
             
             if not hasattr(self, '_wait_to_save_data'):
-                self._wait_to_save_data = []
+                self._wait_to_save_data = set()
             
             if data not in self._wait_to_save_data:
-                self._wait_to_save_data.append(data)
+                self._wait_to_save_data.add(data)
             
         
         def add_public_js(self):
@@ -401,7 +406,6 @@ def BaseHandler(**kwargs):
             
             return self._render_data['custom_js'].append( ''.join(("js/", name, '.min.js')) )
 
-
         def put_render(self, template_name, **kwargs):
             
             """根据之前添加的数据渲染模板。
@@ -453,11 +457,72 @@ def BaseHandler(**kwargs):
             """提供数据自动保存服务等
             """
             
-            self.on_finish_c()
-            
+            return self.on_finish_c()
+            return self.on_finish_save()
+
+        @tornado.gen.coroutine
+        def _execute(self, transforms, *args, **kwargs):
+            """Executes this request with the given output transforms."""
+            self._transforms = transforms
+            try:
+                if self.request.method not in self.SUPPORTED_METHODS:
+                    raise HTTPError(405)
+                self.path_args = [self.decode_argument(arg) for arg in args]
+                self.path_kwargs = dict((k, self.decode_argument(v, name=k))
+                                        for (k, v) in kwargs.items())
+                # If XSRF cookies are turned on, reject form submissions without
+                # the proper cookie
+                if self.request.method not in ("GET", "HEAD", "OPTIONS") and \
+                        self.application.settings.get("xsrf_cookies"):
+                    self.check_xsrf_cookie()
+
+                result = self.prepare()
+                if result is not None:
+                    result = yield result
+                if self._prepared_future is not None:
+                    # Tell the Application we've finished with prepare()
+                    # and are ready for the body to arrive.
+                    self._prepared_future.set_result(None)
+                if self._finished:
+                    return
+
+                if tornado.web._has_stream_request_body(self.__class__):
+                    # In streaming mode request.body is a Future that signals
+                    # the body has been completely received.  The Future has no
+                    # result; the data has been passed to self.data_received
+                    # instead.
+                    try:
+                        yield self.request.body
+                    except iostream.StreamClosedError:
+                        return
+
+                method = getattr(self, self.request.method.lower())
+                result = method(*self.path_args, **self.path_kwargs)
+                if result is not None:
+                    result = yield result
+                if self._auto_finish and not self._finished:
+                    self.finish()
+            except Exception as e:
+                try:
+                    self._handle_request_exception(e)
+                except Exception:
+                    app_log.error("Exception in exception handler", exc_info=True)
+                if (self._prepared_future is not None and
+                        not self._prepared_future.done()):
+                    # In case we failed before setting _prepared_future, do it
+                    # now (to unblock the HTTP server).  Note that this is not
+                    # in a finally block to avoid GC issues prior to Python 3.4.
+                    self._prepared_future.set_result(None)
+
+            result = self.on_finish_save()
+            if result is not None:
+                result = yield result
+
+        @tornado.gen.coroutine
+        def on_finish_save(self):
             if hasattr(self, '_wait_to_save_data'):
                 for line in self._wait_to_save_data:
-                    line.save()
+                    res = yield self.run_on_executor(line.save)
 
         @staticmethod
         def is_absolute(path):
