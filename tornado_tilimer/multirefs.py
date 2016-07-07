@@ -201,7 +201,7 @@ class _multirefs(object):
             del self._ref_dict[temp]
 
 
-    _get_item_id = lambda x: tornado_tilimer.container.get_mixed_val(x, id = True)
+    _get_item_id = lambda s, x: tornado_tilimer.container.get_mixed_val(x, id = True)
 
     def sort(self, key = None, reverse = False):
         if key != None:
@@ -245,8 +245,10 @@ class _multirefs(object):
 
     def pop(self, key = -1):
         if not isinstance(key, int):
-            raise TypeError(repr(key) + ' object cannot be interpreted as an integer')
-        id = self._data[key]
+            id = key
+            key = self._data.index(key)
+        else:
+            id = self._data[key]
         obj = self.get_by_id(id)
         
         del self._data[key]

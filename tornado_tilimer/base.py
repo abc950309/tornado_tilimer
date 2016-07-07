@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import collections
 import os.path
+import time
 
 try:
     from config import *
@@ -231,9 +232,9 @@ def BaseHandler(**kwargs):
                 raise tornado.web.HTTPError(400)
             
             if self.settings.get('cookie_secret'):
-                return self.set_secure_cookie("token", self.session_id)
+                return self.set_secure_cookie("token", self.session_id, expires = int(time.time()) + EXPIRED_TIME)
             else:
-                return self.set_cookie("token", self.session_id)
+                return self.set_cookie("token", self.session_id, expires = int(time.time()) + EXPIRED_TIME)
 
         @property
         def ajax_flag(self):

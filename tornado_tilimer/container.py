@@ -207,7 +207,7 @@ def generate_base_data_class(setting, name, cache = False):
             else:
                 del new_obj.__dict__['__creating']
             
-            new_obj.save()
+            new_obj.force_save()
             return new_obj
 
         def renew(self):
@@ -247,16 +247,12 @@ def generate_base_data_class(setting, name, cache = False):
             for index in list(self._data.keys()):
                 if self._data[index] == None:
                     del self._data[index]
-            
-            print(self)
-            print(self._data)
-            print('_change_lock', self._change_lock)
-            print('update_one')
-            print(self.db[self._name].update_one(
+
+            result = self.db[self._name].update_one(
                 filter = {'_id': self.id},
                 update = { '$set': self._data },
                 upsert = True,
-            ).raw_result)
+            )
             
             self._change_lock = False
 
