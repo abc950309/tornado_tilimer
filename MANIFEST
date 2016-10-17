@@ -3,7 +3,10 @@ setup.py
 tornado_tilimer\__init__.py
 tornado_tilimer\base.py
 tornado_tilimer\container.py
+tornado_tilimer\default_config.py
 tornado_tilimer\js_tools.py
 tornado_tilimer\minfy.py
+tornado_tilimer\multirefs.py
 tornado_tilimer\static_data.py
 tornado_tilimer\struct.py
+tornado_tilimer\ui_modules.py

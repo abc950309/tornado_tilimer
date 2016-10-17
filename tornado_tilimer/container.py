@@ -74,7 +74,7 @@ def generate_base_data_class(setting, name, cache = False):
     global pool
     global clean_couter
     
-    direct_list = ['_id']
+    direct_list = ['_id', 'lastModified']
     ref_dict = {}
     multiref_dict = {}
     for line in setting:
@@ -167,6 +167,8 @@ def generate_base_data_class(setting, name, cache = False):
         
         @classmethod
         def get_multi(cls, filter, **kwargs):
+            if 'sort' not in kwargs:
+                kwargs['sort'] = (('lastModified', -1),)
             data = [x['_id'] for x in cls.db[cls._name].find(filter, ('_id'), **kwargs)]
             return _multirefs(data, cls.get)
         
@@ -196,8 +198,8 @@ def generate_base_data_class(setting, name, cache = False):
 
 
         @classmethod
-        def new(cls, *args, **kwargs):
-            id = get_obj_id()
+        def new(cls, *args, did = None, **kwargs):
+            id = did or get_obj_id()
             new_obj = cls()
             new_obj.build({"_id": id})
             new_obj.__dict__['__creating'] = True
@@ -223,6 +225,10 @@ def generate_base_data_class(setting, name, cache = False):
         def creation(self):
             return get_obj_id_time(self.id)
         
+        @property
+        def lastModified(self):
+            return self._data['lastModified'] or 0
+        
         def create(self):
         
             """被new方法引用，自定义创建过程中的操作。
@@ -247,10 +253,12 @@ def generate_base_data_class(setting, name, cache = False):
             for index in list(self._data.keys()):
                 if self._data[index] == None:
                     del self._data[index]
-
-            result = self.db[self._name].update_one(
+            
+            self._data['lastModified'] = int(time.time())
+            
+            result = self.db[self._name].replace_one(
                 filter = {'_id': self.id},
-                update = { '$set': self._data },
+                replacement = self._data,
                 upsert = True,
             )
             

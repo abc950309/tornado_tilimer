@@ -48,8 +48,8 @@ def get_args(needed = None, optional = None, n = None, o = None, body_only = Fal
                 for line in needed:
                     arguments[line] = _argument(self, line, None)
                     if not arguments[line] or len(arguments[line]) == 0:
-                        raise tornado.web.HTTPError(400)
-                        return self.finish()
+                        return self.show_exception(-1, '您没有填写必要的信息')
+            
             if optional:
                 for line in optional:
                     temp_argument = _argument(self, line, None)
@@ -66,7 +66,7 @@ class Executor(ThreadPoolExecutor):
     _instance = None
     def __new__(cls, *args, **kwargs):
         if not getattr(cls, '_instance', None):
-            cls._instance = ThreadPoolExecutor(max_workers=20)
+            cls._instance = ThreadPoolExecutor(max_workers=50)
         return cls._instance
 
 
@@ -159,7 +159,7 @@ def BaseHandler(**kwargs):
             except DataException as e:
                 self.show_exception(e)
 
-        def show_exception(self, *args, header = None):
+        def show_exception(self, *args, header = None, url = None):
             if not isinstance(args[0], DataException):
                 e = DataException(*args)
             else:
@@ -169,7 +169,7 @@ def BaseHandler(**kwargs):
                 raise RuntimeError("Cannot write() after finish()")
             
             if not (self.ajax_flag or self.api_flag):
-                url = [self.request.headers.get("Referer", '/')]
+                url = [(url or self.request.headers.get("Referer", '/'))]
                 
                 if '?' in url[0]:
                     if url[0][-1] != '&':
@@ -185,6 +185,7 @@ def BaseHandler(**kwargs):
                     url.append('&header=')
                     url.append(str(header))
                 self.redirect(''.join(url))
+                self.finish()
 
             else:
                 self.finish({'errno': e.errno, 'dscp': e.dscp})
@@ -297,10 +298,15 @@ def BaseHandler(**kwargs):
             
             if not hasattr(self, '_wait_to_save_data'):
                 self._wait_to_save_data = set()
+                self._wait_to_save_id = set()
             
-            if data not in self._wait_to_save_data:
-                self._wait_to_save_data.add(data)
-            
+            try:
+                if data.id not in self._wait_to_save_id:
+                    self._wait_to_save_data.add(data)
+                    self._wait_to_save_id.add(data.id)
+            except Exception as e:
+                if self.setting.get('debug', False):
+                    raise e
         
         def add_public_js(self):
             
@@ -372,7 +378,7 @@ def BaseHandler(**kwargs):
                 name = self.static_url(''.join(('less/', name, '.less')), include_version=True)
                 return self._render_data['custom_less'].append( ''.join(('<link rel="stylesheet/less" type="text/css" href="', name, '" />')))
             
-            return self._render_data['custom_css'].append( ''.join(("less/", name, '.min.less')) )
+            return self._render_data['custom_css'].append( ''.join(("less/", name, '.min.css')) )
 
 
         def add_css(self, name):
@@ -436,7 +442,7 @@ def BaseHandler(**kwargs):
                 self.render(template_name, **(self._render_data))
 
 
-        @tornado.web.authenticated
+        @authenticated
         def authenticate(self):
             
             """调用进行登录验证装饰器的虚方法
@@ -523,7 +529,10 @@ def BaseHandler(**kwargs):
         def on_finish_save(self):
             if hasattr(self, '_wait_to_save_data'):
                 for line in self._wait_to_save_data:
-                    res = yield self.run_on_executor(line.save)
+                    try:
+                        res = yield self.run_on_executor(line.save)
+                    except:
+                        print(line)
 
         @staticmethod
         def is_absolute(path):
@@ -557,3 +566,35 @@ def BaseHandler(**kwargs):
         setattr(_base_handler, 'get_current_user', kwargs['current_user_handler'])
 
     return _base_handler
+
+import functools
+import urllib.parse
+
+def authenticated(method):
+    """Decorate methods with this to require that the user be logged in.
+
+    If the user is not logged in, they will be redirected to the configured
+    `login url <RequestHandler.get_login_url>`.
+
+    If you configure a login url with a query parameter, Tornado will
+    assume you know what you're doing and use it as-is.  If not, it
+    will add a `next` parameter so the login page knows where to send
+    you once you're logged in.
+    """
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        if not self.current_user:
+            if self.request.method in ("GET", "HEAD"):
+                url = self.get_login_url()
+                if "?" not in url:
+                    if urllib.parse.urlsplit(url).scheme:
+                        # if login url is absolute, make next absolute too
+                        next_url = self.request.full_url()
+                    else:
+                        next_url = self.request.uri
+                    url += "?" + urllib.parse.urlencode(dict(next=next_url, errno=-1, dscp='您需要登录才能访问这个页面'))
+                self.redirect(url)
+                return
+            raise HTTPError(403)
+        return method(self, *args, **kwargs)
+    return wrapper

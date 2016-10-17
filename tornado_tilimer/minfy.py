@@ -2,7 +2,6 @@ from tornado_tilimer.js_tools import jsmin
 import tornado_tilimer.static_data as static_data
 
 from csscompressor import compress
-import lesscpy
 import hashlib
 import os.path
 import os
@@ -104,7 +103,7 @@ def _minfy_static_less_files(root_path):
         if file not in min_data or min_data.get(file, None) != file_md5:
             
             print(("minfy file " + file_path).title())
-            minfy_path = os.path.join( root_path, file + ".min." + ext )
+            minfy_path = os.path.join( root_path, file + ".min.css")
             
             os.system('lessc --clean-css "' + file_path + '" > "' + minfy_path + '"')
             
